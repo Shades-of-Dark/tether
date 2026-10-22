@@ -1,0 +1,985 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tether</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0d0e11; --ink-2: #15171c; --ink-3: #1d2027; --line: #2a2e37;
+    --paper: #f1ede4; --muted: #8b8f9b; --dim: #5d616c;
+    --flare: #ff5a36; --flare-soft: rgba(255, 90, 54, .12);
+    --teal: #2ec4b6; --gold: #f4d35e; --bad: #ff4d6d;
+    --sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--ink); color: var(--paper); font-family: var(--sans); }
+  body {
+    min-height: 100vh;
+    background-image: linear-gradient(var(--ink-2) 1px, transparent 1px), linear-gradient(90deg, var(--ink-2) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  a { color: var(--flare); }
+  [hidden] { display: none !important; }
+
+  .shell { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+  aside { background: var(--ink); border-right: 1px solid var(--line); padding: 28px 22px; display: flex; flex-direction: column; gap: 28px; }
+  main { padding: 34px 44px 70px; display: flex; flex-direction: column; gap: 24px; max-width: 1060px; width: 100%; }
+
+  .mark { display: flex; align-items: flex-end; gap: 12px; }
+  .mark h1 { font-size: 54px; line-height: .8; margin: 0; letter-spacing: -3px; font-weight: 700; }
+  .tag { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.45; }
+
+  .label { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .muted { color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .mono { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+
+  .btn { border: 1px solid var(--line); background: var(--ink-3); padding: 9px 14px; border-radius: 3px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.ghost { background: transparent; }
+  .btn.small { padding: 5px 9px; font-size: 12px; }
+  .btn.flare { background: var(--flare); border-color: var(--flare); color: var(--ink); font-weight: 700; }
+  .btn.flare:hover { filter: brightness(1.08); }
+  .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  input[type=text], input[type=password], input[type=number], textarea {
+    width: 100%; background: var(--ink-2); border: 1px solid var(--line); border-radius: 3px; padding: 11px 12px; outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--flare); }
+  ::placeholder { color: var(--dim); opacity: 1; }
+  textarea { resize: vertical; min-height: 92px; font-family: var(--mono); font-size: 12px; }
+
+  /* sidebar */
+  .projects { display: flex; flex-direction: column; gap: 4px; }
+  .proj { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 10px; cursor: pointer; display: grid; gap: 3px; }
+  .proj:hover { background: var(--ink-2); }
+  .proj.active { border-color: var(--flare); background: var(--flare-soft); }
+  .proj b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .settings-link { margin-top: auto; display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left; }
+  .dots { display: flex; gap: 5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .dot.ok { background: var(--teal); } .dot.no { background: var(--bad); } .dot.warn { background: var(--gold); }
+
+  /* headings */
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--flare); }
+  .h-big { font-size: 46px; font-weight: 700; letter-spacing: -1.6px; margin: 6px 0 0; line-height: 1; }
+
+  /* setup steps */
+  .step { display: grid; grid-template-columns: 46px 1fr; gap: 18px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 6px; padding: 22px; }
+  .step.done { border-color: rgba(46,196,182,.35); }
+  .num { width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+  .step.done .num { border-color: var(--teal); color: var(--teal); }
+  .step h3 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.3px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .step h3 .ok { font-family: var(--mono); font-size: 11px; color: var(--teal); letter-spacing: .1em; text-transform: uppercase; }
+  .step .body { display: flex; flex-direction: column; gap: 12px; }
+  .keyrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .fine { font-size: 12px; color: var(--dim); line-height: 1.5; }
+  .fine b { color: var(--muted); font-weight: 500; }
+  .keyset { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .keyset .mono { background: var(--ink); border: 1px solid var(--line); padding: 8px 12px; border-radius: 3px; font-size: 13px; }
+  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .opt { border: 1px solid var(--line); border-radius: 4px; padding: 16px; background: var(--ink); display: flex; flex-direction: column; gap: 10px; }
+  .opt h4 { margin: 0; font-size: 15px; font-weight: 500; }
+  .tree { font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px; white-space: pre; overflow-x: auto; line-height: 1.6; }
+  .tree em { color: var(--flare); font-style: normal; }
+  .note { border-left: 2px solid var(--gold); padding: 4px 0 4px 12px; font-size: 13px; color: var(--muted); }
+
+  /* empty / new project */
+  .hero { border: 2px dashed var(--line); border-radius: 8px; padding: 46px; display: flex; flex-direction: column; gap: 16px; }
+  .hero .big { font-size: 64px; font-weight: 700; letter-spacing: -2.6px; line-height: .92; }
+  .hero .big em { font-style: normal; color: var(--flare); }
+  .newrow { display: grid; grid-template-columns: 1fr auto; gap: 10px; max-width: 620px; }
+  .newrow input { font-size: 18px; padding: 14px 16px; }
+
+  /* project view */
+  .projhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .drop {
+    border: 2px dashed var(--line); border-radius: 6px; min-height: 210px; display: grid; place-items: center; text-align: center;
+    cursor: pointer; transition: .15s; background: repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255,255,255,.012) 14px 28px);
+  }
+  .drop:hover { border-color: var(--muted); }
+  .drop.over { border-color: var(--flare); background: var(--flare-soft); }
+  .drop .big { font-size: 56px; font-weight: 700; letter-spacing: -2.4px; line-height: .9; }
+  .drop .big em { font-style: normal; color: var(--flare); }
+  .drop .sub { color: var(--muted); margin-top: 12px; font-size: 14px; }
+  .files { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; padding: 6px 6px 6px 10px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 3px; max-width: 100%; }
+  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+  .chip button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; padding: 0 4px; }
+  .chip button:hover { color: var(--bad); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .topicrow { display: grid; grid-template-columns: 1fr 74px 92px; gap: 8px; }
+  .hint { font-size: 12px; color: var(--dim); margin-top: 6px; }
+  .go { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .go .btn.flare { font-size: 18px; padding: 14px 28px; }
+
+  .run { border: 1px solid var(--line); background: var(--ink-2); border-radius: 6px; padding: 18px; }
+  .stage { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 12px; gap: 12px; }
+  .stage span { font-family: var(--mono); color: var(--muted); }
+  .bar { position: relative; height: 6px; background: var(--ink-3); border-radius: 99px; overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--flare); transition: width .4s ease; border-radius: 99px; overflow: hidden; }
+  .bar.live i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); animation: shimmer 1.4s linear infinite; }
+  @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .log { margin-top: 14px; font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 10px 12px; max-height: 210px; overflow: auto; white-space: pre-wrap; }
+  .bar.err i { background: var(--bad); }
+  .log .err { color: var(--bad); } .log .warn { color: var(--gold); } .log .dim { color: var(--dim); font-size: 11px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+  .stat { border: 1px solid var(--line); border-radius: 4px; padding: 14px; background: var(--ink); }
+  .stat b { display: block; font-size: 34px; letter-spacing: -1px; }
+  .stat span { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .stat.teal b { color: var(--teal); } .stat.gold b { color: var(--gold); } .stat.flare b { color: var(--flare); }
+
+  .toast { position: fixed; top: 20px; right: 20px; background: var(--paper); color: var(--ink); padding: 10px 16px; border-radius: 3px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: .2s; pointer-events: none; max-width: min(420px, 90vw); z-index: 9; }
+  .toast.show { opacity: 1; transform: none; }
+  .toast.bad { background: var(--bad); color: #fff; }
+
+
+  /* status card */
+  .status { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; border: 1px solid var(--line); background: var(--ink-2); border-radius: 8px; padding: 14px 16px; margin-top: -6px; }
+  .status.ok { border-color: rgba(46,196,182,.35); } .status.err { border-color: rgba(255,77,109,.5); background: rgba(255,77,109,.06); }
+  .status.busy { border-color: rgba(255,90,54,.45); } .status.wait { border-color: rgba(244,211,94,.4); }
+  .sicon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 700; border: 2px solid var(--line); color: var(--dim); }
+  .status.ok .sicon { border-color: var(--teal); color: var(--teal); }
+  .status.err .sicon { border-color: var(--bad); color: var(--bad); }
+  .status.wait .sicon { border-color: var(--gold); color: var(--gold); }
+  .status.busy .sicon { border-color: rgba(255,90,54,.25); border-top-color: var(--flare); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .stitle { font-size: 17px; font-weight: 500; letter-spacing: -.2px; }
+  .ssub { font-size: 13px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+  .status.err .ssub { color: var(--paper); }
+  .sbar { grid-column: 1 / -1; height: 4px; background: var(--ink-3); border-radius: 99px; overflow: hidden; }
+  .sbar i { display: block; height: 100%; width: 0; background: var(--flare); transition: width .4s ease; }
+  .sactions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  /* dialog */
+  .dlg-bg { position: fixed; inset: 0; background: rgba(5,6,8,.72); z-index: 9; display: grid; place-items: center; padding: 20px; }
+  .dlg { width: min(460px, 100%); background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+  .dlg h3 { margin: 0; font-size: 19px; }
+  .dlg p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .dlg .row { justify-content: flex-end; margin-top: 6px; }
+  .btn.danger-fill { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700; }
+  .chip.abs span:first-child::before { content: "abstract · "; color: var(--gold); }
+
+  /* spending */
+  .spend { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+  .spend label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+  .money { display: flex; align-items: center; background: var(--ink-2); border: 1px solid var(--line); border-radius: 3px; }
+  .money i { font-style: normal; color: var(--dim); padding-left: 10px; }
+  .money input { border: none; background: transparent; padding: 10px 10px 10px 4px; }
+  .money:focus-within { border-color: var(--flare); }
+
+  /* zotero */
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tier { text-align: left; border: 1px solid var(--line); background: var(--ink); border-radius: 4px; padding: 14px; cursor: pointer; display: grid; gap: 6px; }
+  .tier:hover { border-color: var(--muted); }
+  .tier.on { border-color: var(--flare); background: var(--flare-soft); }
+  .tier b { font-size: 15px; font-weight: 500; }
+  .tier span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+  .zpanel { border: 1px solid var(--line); border-radius: 4px; background: var(--ink); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .access { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .access b { color: var(--paper); font-weight: 500; }
+  .perm { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; font-size: 14px; cursor: pointer; }
+  .perm input { margin-top: 3px; accent-color: var(--flare); width: 16px; height: 16px; }
+  .perm small { display: block; color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .zstat { font-family: var(--mono); font-size: 12px; color: var(--teal); }
+  .zrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .zbtn { border-color: var(--teal); color: var(--teal); }
+  .abs { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .modal-bg { position: fixed; inset: 0; background: rgba(5,6,8,.72); z-index: 8; display: grid; place-items: center; padding: 20px; }
+  .modal { width: min(1040px, 100%); height: min(720px, 92vh); background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+  .modal header, .modal footer { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .modal footer { border-bottom: none; border-top: 1px solid var(--line); }
+  .modal h3 { margin: 0; font-size: 20px; }
+  .mbody { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  .colls { border-right: 1px solid var(--line); overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .coll { text-align: left; background: none; border: 1px solid transparent; border-radius: 3px; padding: 7px 8px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+  .coll:hover { background: var(--ink-3); } .coll.on { border-color: var(--flare); background: var(--flare-soft); }
+  .coll small { color: var(--dim); font-family: var(--mono); }
+  .zlist { overflow: auto; display: flex; flex-direction: column; min-height: 0; }
+  .zsearch { padding: 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--ink-2); display: flex; gap: 8px; align-items: center; }
+  .zitem { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--ink-3); cursor: pointer; align-items: start; }
+  .zitem:hover { background: var(--ink-3); }
+  .zitem.dis { opacity: .45; cursor: not-allowed; }
+  .zitem input { accent-color: var(--flare); width: 16px; height: 16px; margin-top: 2px; }
+  .zitem .t { font-size: 14px; line-height: 1.35; }
+  .zitem .m { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .badge { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .badge.pdf { color: var(--teal); border-color: rgba(46,196,182,.4); } .badge.abs { color: var(--gold); border-color: rgba(244,211,94,.35); }
+  .badge.in { color: var(--flare); border-color: rgba(255,90,54,.4); }
+
+  @media (max-width: 900px) {
+    .tiers { grid-template-columns: 1fr; } .spend { grid-template-columns: 1fr; } .status { grid-template-columns: 44px 1fr; } .sactions { grid-column: 1 / -1; justify-content: flex-start; } .mbody { grid-template-columns: 1fr; } .colls { max-height: 140px; border-right: none; border-bottom: 1px solid var(--line); }
+    .shell { grid-template-columns: 1fr; }
+    aside { border-right: none; border-bottom: 1px solid var(--line); }
+    main { padding: 22px 16px 60px; }
+    .grid2, .choice, .stats { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 1fr; }
+    .hero { padding: 26px; } .hero .big, .drop .big { font-size: 42px; }
+    .newrow, .keyrow { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div>
+      <div class="mark">
+        <h1>tether</h1>
+        <svg width="66" height="32" viewBox="0 0 70 34" fill="none" aria-hidden="true">
+          <path d="M3 28 C 18 28, 16 6, 34 6 S 52 28, 67 6" stroke="#ff5a36" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="3" cy="28" r="3.5" fill="#f1ede4"/><circle cx="67" cy="6" r="3.5" fill="#2ec4b6"/>
+        </svg>
+      </div>
+      <div class="tag">Turn research papers into linked notes where every claim points to the exact quote and page it came from.</div>
+    </div>
+
+    <div id="projNav" hidden>
+      <div class="label">Projects <button class="btn small ghost" id="newProjBtn">+ New</button></div>
+      <div class="projects" id="projects"></div>
+    </div>
+
+    <button class="btn ghost settings-link" id="settingsBtn">
+      <span>Settings</span>
+      <span class="dots"><i class="dot" id="dKey" title="API key"></i><i class="dot" id="dVault" title="Vault"></i><i class="dot" id="dObs" title="Obsidian"></i></span>
+    </button>
+  </aside>
+
+  <main>
+    <!-- ============ SETUP / SETTINGS ============ -->
+    <section id="vSetup" hidden>
+      <div>
+        <div class="eyebrow" id="setupEyebrow">First-time setup</div>
+        <h2 class="h-big" id="setupTitle">Three things, once.</h2>
+      </div>
+
+      <div class="step" id="stepKey" style="margin-top:24px">
+        <div class="num">1</div>
+        <div class="body">
+          <h3>Anthropic API key <span class="ok" id="keyOk" hidden>✓ saved</span></h3>
+          <div class="muted">tether uses Claude to read papers. Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys.</div>
+          <div id="keyEntry">
+            <div class="keyrow">
+              <input type="password" id="keyInput" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+              <button class="btn flare" id="keySave">Save key</button>
+            </div>
+          </div>
+          <div class="keyset" id="keyShown" hidden>
+            <span class="mono" id="keyHint"></span>
+            <button class="btn small" id="keyTest">Test it</button>
+            <button class="btn small ghost" id="keyReplace">Replace</button>
+            <button class="btn small ghost danger" id="keyRemove">Remove</button>
+          </div>
+          <div class="fine">Stored only on this computer, in tether's <b>.env</b> file (which git ignores, so it never gets committed). It's sent only to Anthropic. This page never sees it again after you save; it shows just the first and last few characters.</div>
+        </div>
+      </div>
+
+      <div class="step" id="stepVault" style="margin-top:14px">
+        <div class="num">2</div>
+        <div class="body">
+          <h3>Your Obsidian vault <span class="ok" id="vaultOk" hidden>✓ set</span></h3>
+          <div class="muted">A <b style="color:var(--paper);font-weight:500">vault</b> is just a folder Obsidian treats as one notebook. Links, search and the graph only work <i>inside</i> a vault, so most people keep <b style="color:var(--paper);font-weight:500">one vault for everything</b> and use folders inside it. tether puts all its projects in one <span class="mono">Tether</span> folder in your vault and doesn't touch your other notes.</div>
+          <div class="tree" id="vaultTree"></div>
+          <div id="vaultCurrent" hidden class="row"><span class="mono" id="vaultPathShown"></span><button class="btn small ghost" id="vaultChange">Change</button></div>
+          <div class="choice" id="vaultChoice">
+            <div class="opt">
+              <h4>I already have a vault</h4>
+              <div class="fine">Pick the folder you open in Obsidian.</div>
+              <div class="row"><button class="btn" id="pickExisting">Browse…</button></div>
+              <input type="text" id="existingPath" placeholder="or paste its path">
+              <button class="btn small" id="useExisting">Use this folder</button>
+            </div>
+            <div class="opt">
+              <h4>Make me a new one</h4>
+              <div class="fine">Creates an empty vault folder. Afterwards, open it in Obsidian with <i>Open folder as vault</i>.</div>
+              <input type="text" id="newVaultName" value="Obsidian Vault" aria-label="New vault name">
+              <div class="row"><button class="btn" id="pickParent">Choose where…</button></div>
+              <input type="text" id="newVaultParent" placeholder="or paste a parent folder (e.g. Documents)">
+              <button class="btn small" id="createVault">Create vault</button>
+            </div>
+          </div>
+          <div class="note" id="vaultNotOpened" hidden>Obsidian hasn't opened this folder yet. That's fine: in Obsidian choose <b>Open folder as vault</b> and pick it.</div>
+        </div>
+      </div>
+
+      <div class="step" id="stepObs" style="margin-top:14px">
+        <div class="num">3</div>
+        <div class="body">
+          <h3>Obsidian app <span class="ok" id="obsOk" hidden>✓ installed</span></h3>
+          <div class="muted" id="obsMsg"></div>
+          <div class="row" id="obsGet"><a class="btn" href="https://obsidian.md/download" target="_blank" rel="noopener" style="text-decoration:none">Download Obsidian ↗</a><button class="btn ghost" id="obsRecheck">I've installed it</button></div>
+        </div>
+      </div>
+
+      <div class="step" id="stepZot" style="margin-top:14px">
+        <div class="num">4</div>
+        <div class="body">
+          <h3>Zotero <span style="font-size:13px;color:var(--dim);font-weight:400">optional</span> <span class="ok" id="zOk" hidden></span></h3>
+          <div class="muted">Bring papers you've saved in Zotero into tether, and optionally send what tether finds back. You choose how much access tether gets, and can change it any time.</div>
+          <div class="tiers" role="radiogroup" aria-label="Zotero access">
+            <button class="tier" data-tier="off" role="radio"><b>Off</b><span>tether can't see your Zotero library.</span></button>
+            <button class="tier" data-tier="read" role="radio"><b>Read</b><span>Pick papers from Zotero and use its citations. Nothing in Zotero changes.</span></button>
+            <button class="tier" data-tier="write" role="radio"><b>Read &amp; write</b><span>Also add the papers tether finds to Zotero, with notes. Only what you tick.</span></button>
+          </div>
+
+          <div class="zpanel" id="zRead" hidden>
+            <div class="label" style="margin:0">Read access</div>
+            <ul class="access">
+              <li>tether <b>reads</b> your library's titles, authors and collections, and the PDFs of papers <b>you pick</b>.</li>
+              <li>It reads a <b>copy</b> of Zotero's database, so it can't change or lock it, even with Zotero open.</li>
+              <li>Only papers you import into a project get read in full and sent to Claude when you build.</li>
+            </ul>
+            <div id="zReadForm">
+              <div class="fine" style="margin-bottom:6px">Your Zotero data folder (the one with <span class="mono">zotero.sqlite</span>). In Zotero: Settings → Advanced → Files and Folders → <i>Show Data Directory</i>.</div>
+              <div class="keyrow"><input type="text" id="zDir" placeholder="C:\Users\you\Zotero"><button class="btn" id="zPick">Browse…</button></div>
+              <div class="row" style="margin-top:10px"><button class="btn flare" id="zConnect">Allow read access</button><span class="fine" id="zDetected"></span></div>
+            </div>
+            <div class="zrow" id="zReadOn" hidden><span class="zstat" id="zStat"></span><span class="mono" id="zDirShown" style="color:var(--muted)"></span><button class="btn small ghost" id="zChangeDir">Change folder</button></div>
+          </div>
+
+          <div class="zpanel" id="zWrite" hidden>
+            <div class="label" style="margin:0">Write access: tick only what you want</div>
+            <label class="perm"><input type="checkbox" id="pPapers" checked><span>Add papers to Zotero<small>Creates a <span class="mono">Tether / &lt;project&gt;</span> collection, adds papers tether found that aren't in your library yet, and files the ones you already have into it.</small></span></label>
+            <label class="perm"><input type="checkbox" id="pNotes" checked><span>Add claim notes<small>One note per paper listing tether's verified claims and links to other papers. tether only ever updates notes it created.</small></span></label>
+            <label class="perm"><input type="checkbox" id="pPdfs"><span>Upload PDFs<small>Attaches each new paper's PDF. Counts against your Zotero storage (300 MB on the free plan).</small></span></label>
+            <ul class="access" style="border-top:1px solid var(--line);padding-top:10px">
+              <li>tether <b>never deletes</b> anything, and never edits your items' details, your notes or your tags.</li>
+              <li>Writes go through Zotero's official web API and reach your desktop app through normal Zotero sync. tether never writes to Zotero's database file directly.</li>
+            </ul>
+            <div id="zKeyEntry">
+              <div class="fine" style="margin-bottom:6px">Needs a zotero.org API key: <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">create one</a> and tick <i>Allow library access</i>, <i>Allow write access</i> and <i>Allow notes access</i>.</div>
+              <input type="password" id="zKey" placeholder="Zotero API key" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="zrow" id="zKeyShown" hidden><span class="mono" id="zKeyHint" style="color:var(--muted)"></span><button class="btn small ghost" id="zKeyReplace">Replace key</button></div>
+            <div class="row"><button class="btn flare" id="zSaveWrite">Save write access</button><span class="fine" id="zWriteState"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step done" id="stepCost" style="margin-top:14px">
+        <div class="num">5</div>
+        <div class="body">
+          <h3>Models, cost &amp; limits</h3>
+          <div class="muted">Which Claude model does which job. Both use prompt caching, so the instructions repeated on every call cost 5–10% of the normal price after the first call. Switching keeps the work already done; only new papers use the new setting.</div>
+          <div class="tiers" style="grid-template-columns:1fr 1fr" role="radiogroup" aria-label="Model profile">
+            <button class="tier" data-profile="balanced" role="radio"><b>Balanced <span style="color:var(--dim);font-weight:400">· recommended</span></b><span id="profBalanced"></span></button>
+            <button class="tier" data-profile="budget" role="radio"><b>Budget</b><span id="profBudget"></span></button>
+          </div>
+          <div class="spend">
+            <label>Ask me first if an update will cost more than
+              <span class="money"><i>$</i><input type="number" id="askAbove" min="0" step="0.10" inputmode="decimal"></span></label>
+            <label>Never spend more than this per month
+              <span class="money"><i>$</i><input type="number" id="monthlyCap" min="0" step="1" placeholder="no cap" inputmode="decimal"></span></label>
+            <button class="btn small" id="saveSpend">Save limits</button>
+          </div>
+          <div class="fine" id="spentLine"></div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:22px"><button class="btn flare" id="setupDone">Continue →</button><span class="muted" id="setupHint"></span></div>
+    </section>
+
+    <!-- ============ NEW PROJECT ============ -->
+    <section id="vNew" hidden>
+      <div class="hero">
+        <div class="eyebrow" id="newEyebrow">Start here</div>
+        <div class="big">what are you<br><em>researching?</em></div>
+        <div class="muted">Each project gets its own folder in <span class="mono" id="newWhere"></span>. Name it after your topic or assignment. You can add papers right after.</div>
+        <div class="newrow">
+          <input type="text" id="newName" placeholder="Project name" maxlength="60" autocomplete="off">
+          <button class="btn flare" id="createProj">Create project</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PROJECT ============ -->
+    <section id="vProject" hidden style="display:flex;flex-direction:column;gap:24px">
+      <div class="projhead">
+        <div><div class="eyebrow">Project</div><h2 class="h-big" id="projTitle"></h2></div>
+        <div class="row"><button class="btn small ghost" id="projFolder">Show folder</button><button class="btn small" id="projObsidian" hidden>Open in Obsidian</button></div>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite">
+        <div class="sicon" id="sIcon" aria-hidden="true">·</div>
+        <div><div class="stitle" id="sTitle">Loading…</div><div class="ssub" id="sSub"></div></div>
+        <div class="sactions">
+          <button class="btn small flare" id="approveBtn" hidden>Go ahead</button>
+          <button class="btn small ghost" id="declineBtn" hidden>Not now</button>
+          <button class="btn small" id="updateNow" hidden>Update now</button>
+          <button class="btn small ghost" id="fullRebuild" hidden>Rebuild from scratch</button>
+          <button class="btn small ghost" id="toggleLog">Details</button>
+        </div>
+        <div class="sbar" id="sBar" hidden><i></i></div>
+      </div>
+
+      <div>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add PDF files">
+          <div>
+            <div class="big">drop <em>papers</em> here.</div>
+            <div class="sub">PDFs only · or click to choose · copied into this project's <span class="mono">Sources</span> folder</div>
+          </div>
+        </div>
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+        <div class="zrow" style="margin-top:12px">
+          <button class="btn zbtn" id="zImportBtn" hidden>Import from Zotero…</button>
+          <span class="fine" id="zImportHint"></span>
+        </div>
+        <div class="files" id="files" style="margin-top:12px"></div>
+        <div class="files" id="absList" style="margin-top:8px"></div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <div class="label">Links (one per line)</div>
+          <textarea id="urls" placeholder="arxiv.org/abs/…&#10;doi.org/…&#10;direct link to a PDF"></textarea>
+          <div class="row" style="margin-top:8px"><button class="btn" id="addLinks" disabled>Add links</button><span class="hint" style="margin:0">arXiv, DOI or PDF links. Paywalled papers come in as their abstract.</span></div>
+        </div>
+        <div>
+          <div class="label">Or find papers on a topic</div>
+          <div class="topicrow">
+            <input type="text" id="topic" placeholder="Search terms">
+            <input type="number" id="n" value="12" min="1" max="40" title="How many papers" aria-label="How many papers">
+            <input type="number" id="since" placeholder="Since" min="1950" max="2100" title="Earliest publication year" aria-label="Earliest year">
+          </div>
+          <div class="row" style="margin-top:8px"><button class="btn" id="addTopic" disabled>Find &amp; add</button><span class="hint" style="margin:0">Open-access papers from OpenAlex · how many · earliest year</span></div>
+          <div class="label" style="margin-top:18px">Research question <span style="text-transform:none;letter-spacing:0">(optional)</span></div>
+          <input type="text" id="question" placeholder="What is your lit review trying to answer?">
+          <div class="hint" id="qHint">Organizes the outline. Saved automatically.</div>
+        </div>
+      </div>
+
+      <div class="run" id="run" hidden>
+        <div class="stage"><b id="stage" style="font-weight:500">Starting</b><span id="pct">0%</span></div>
+        <div class="bar live" id="bar"><i></i></div>
+        <div class="log" id="log"></div>
+        <div id="done" hidden>
+          <div class="stats">
+            <div class="stat teal"><b id="sIdeas">0</b><span>central ideas</span></div>
+            <div class="stat"><b id="sPapers">0</b><span>papers</span></div>
+            <div class="stat"><b id="sClaims">0</b><span>key claims</span></div>
+            <div class="stat flare"><b id="sContra">0</b><span>disagreements</span></div>
+          </div>
+          <div class="row" style="margin-top:16px"><button class="btn flare" id="doneObsidian">Open in Obsidian</button><button class="btn zbtn" id="zSyncBtn" hidden>Sync to Zotero again</button><span class="fine" id="zSyncMsg"></span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-bg" id="zModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="zmTitle">
+    <header><div><div class="eyebrow">Zotero, read only</div><h3 id="zmTitle">Pick papers to bring in</h3></div><button class="btn ghost" id="zmClose">Close</button></header>
+    <div class="mbody">
+      <div class="colls" id="zmColls"></div>
+      <div class="zlist">
+        <div class="zsearch"><input type="text" id="zmQuery" placeholder="Search title, author, year…"><button class="btn small ghost" id="zmAll">Select all with PDF</button></div>
+        <div id="zmItems"></div>
+      </div>
+    </div>
+    <footer><span class="fine" id="zmInfo"></span><div class="row"><span class="muted" id="zmCount">0 selected</span><button class="btn flare" id="zmImport" disabled>Import</button></div></footer>
+  </div>
+</div>
+<div class="dlg-bg" id="dlg" hidden>
+  <div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgBody">
+    <h3 id="dlgTitle"></h3><p id="dlgBody"></p>
+    <div class="row"><button class="btn ghost" id="dlgNo">Cancel</button><button class="btn flare" id="dlgYes">OK</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const PAGE_VERSION = "__VERSION__";
+let S = null, current = null, files = [], pollTimer = null, view = null, forceSettings = false;
+
+function toast(msg, bad = false) {
+  const t = $("toast"); t.textContent = msg; t.className = "toast show" + (bad ? " bad" : "");
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = "toast", bad ? 6000 : 2600);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 404 && path.startsWith("/api/") && !body.detail?.startsWith("No ")) {
+    staleServer(); throw new Error("tether needs a restart (see the banner).");
+  }
+  if (!r.ok) throw new Error(body.detail || r.statusText);
+  return body;
+}
+const post = (path, data) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) });
+const del = (path) => api(path, { method: "DELETE" });
+const enc = encodeURIComponent;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+function ask({ title, body, yes = "OK", danger = false }) {
+  return new Promise((resolve) => {
+    $("dlgTitle").textContent = title; $("dlgBody").textContent = body;
+    $("dlgYes").textContent = yes; $("dlgYes").className = danger ? "btn danger-fill" : "btn flare";
+    $("dlg").hidden = false; $("dlgYes").focus();
+    const done = (v) => { $("dlg").hidden = true; document.removeEventListener("keydown", key); resolve(v); };
+    const key = (e) => { if (e.key === "Escape") done(false); };
+    document.addEventListener("keydown", key);
+    $("dlgYes").onclick = () => done(true); $("dlgNo").onclick = () => done(false);
+    $("dlg").onclick = (e) => { if (e.target === $("dlg")) done(false); };
+  });
+}
+const setupComplete = () => S && S.key_set && S.vault_ok;
+
+function show(v) {
+  view = v;
+  for (const id of ["vSetup", "vNew", "vProject"]) $(id).hidden = id !== v;
+  $("vProject").style.display = v === "vProject" ? "flex" : "none";
+}
+
+function route() {
+  if (!setupComplete() || forceSettings) return renderSetup(), show("vSetup");
+  if (current && S.projects.some((p) => p.name === current)) return show("vProject");
+  current = null;
+  $("newEyebrow").textContent = S.projects.length ? "New project" : "Start here";
+  $("newWhere").textContent = S.projects_folder;
+  show("vNew");
+}
+
+function renderSide() {
+  const dot = (el, cls) => el.className = "dot " + cls;
+  dot($("dKey"), S.key_set ? "ok" : "no");
+  dot($("dVault"), S.vault_ok ? (S.vault_is_obsidian ? "ok" : "warn") : "no");
+  dot($("dObs"), S.obsidian_installed ? "ok" : S.obsidian_installed === null ? "warn" : "no");
+  $("projNav").hidden = !setupComplete();
+  const box = $("projects");
+  box.innerHTML = S.projects.length ? S.projects.map((p) => `
+    <button class="proj ${p.name === current && view === "vProject" ? "active" : ""}" data-name="${esc(p.name)}">
+      <b>${esc(p.name)}</b>
+      <span>${p.built ? (p.current ? `${p.ideas} ideas · ${p.papers} papers` : `${p.papers} papers · needs update`) : p.sources ? `${p.sources} PDFs · not built yet` : "empty"}</span>
+    </button>`).join("") : '<div class="muted" style="font-size:13px">No projects yet.</div>';
+  box.querySelectorAll(".proj").forEach((b) => b.onclick = () => openProject(b.dataset.name));
+}
+
+function renderProfile() {
+  if (!S || !S.profiles) return;
+  if (document.activeElement !== $("askAbove")) $("askAbove").value = S.ask_above.toFixed(2);
+  if (document.activeElement !== $("monthlyCap")) $("monthlyCap").value = S.monthly_cap ? S.monthly_cap.toFixed(2) : "";
+  $("spentLine").textContent = `Spent this month: $${S.spent_month.toFixed(2)}${S.monthly_cap ? ` of $${S.monthly_cap.toFixed(2)}` : ""}. `
+    + "Each update's cost and cache hit rate also appear in the project's status card.";
+  $("profBalanced").textContent = S.profiles.balanced; $("profBudget").textContent = S.profiles.budget;
+  document.querySelectorAll("[data-profile]").forEach((b) => {
+    const on = b.dataset.profile === S.profile; b.classList.toggle("on", on); b.setAttribute("aria-checked", on);
+  });
+}
+$("saveSpend").onclick = async () => {
+  try {
+    S = await post("/api/spending", { ask_above: +$("askAbove").value || 0, monthly_cap: +$("monthlyCap").value || 0 });
+    renderProfile(); toast(S.monthly_cap ? `Saved: ask above $${S.ask_above.toFixed(2)}, never more than $${S.monthly_cap.toFixed(2)} a month.` : `Saved: ask above $${S.ask_above.toFixed(2)}, no monthly cap.`);
+  } catch (e) { toast(e.message, true); }
+};
+document.querySelectorAll("[data-profile]").forEach((b) => b.onclick = async () => {
+  try { S = await post("/api/profile", { profile: b.dataset.profile }); renderProfile();
+        toast(b.dataset.profile === "budget" ? "Budget: Haiku does everything from now on." : "Balanced: Sonnet reads and compares; Haiku checks."); }
+  catch (e) { toast(e.message, true); }
+});
+function renderSetup() {
+  renderProfile();
+  if (!Z) loadZotero().catch(() => {}); else renderZotero();
+  const first = !setupComplete() && !forceSettings;
+  $("setupEyebrow").textContent = first ? "First-time setup" : "Settings";
+  $("setupTitle").textContent = first ? "Three things, once." : "Settings";
+  // key
+  $("stepKey").classList.toggle("done", S.key_set); $("keyOk").hidden = !S.key_set;
+  $("keyEntry").hidden = S.key_set && !$("keyEntry").dataset.replacing;
+  $("keyShown").hidden = !S.key_set || !!$("keyEntry").dataset.replacing;
+  $("keyHint").textContent = S.key_hint;
+  // vault
+  $("stepVault").classList.toggle("done", S.vault_ok); $("vaultOk").hidden = !S.vault_ok;
+  const changing = !!$("vaultChoice").dataset.changing;
+  $("vaultCurrent").hidden = !S.vault_ok || changing; $("vaultChoice").hidden = S.vault_ok && !changing;
+  $("vaultPathShown").textContent = S.vault;
+  $("vaultNotOpened").hidden = !(S.vault_ok && !S.vault_is_obsidian);
+  const v = S.vault_ok ? S.vault.split(/[\\/]/).pop() : "Your Vault";
+  $("vaultTree").innerHTML = `${esc(v)}/\n├── your own notes…        <span style="color:var(--dim)">(untouched)</span>\n└── <em>Tether/</em>\n    ├── <em>&lt;project one&gt;/</em>    Sources/ Papers/ Claims/ Concepts/ 00 Overview\n    └── <em>&lt;project two&gt;/</em>`;
+  // obsidian
+  const o = S.obsidian_installed;
+  $("stepObs").classList.toggle("done", !!o); $("obsOk").hidden = !o; $("obsGet").hidden = !!o;
+  $("obsMsg").textContent = o ? "Found on this computer." : o === null
+    ? "Couldn't check on this system. If it's installed, you're fine."
+    : "Free from obsidian.md. You can build projects without it, but you need it to see the notes and graph.";
+  // continue
+  $("setupDone").disabled = !setupComplete();
+  $("setupHint").textContent = setupComplete() ? "" : !S.key_set ? "Save your key to continue." : "Choose a vault to continue.";
+  $("setupDone").textContent = forceSettings && setupComplete() ? "Done" : "Continue →";
+}
+
+function staleServer() {
+  if ($("stale")) return;
+  const d = document.createElement("div"); d.id = "stale";
+  d.style.cssText = "position:fixed;inset:0 0 auto 0;z-index:10;background:var(--gold);color:var(--ink);padding:12px 20px;font-weight:500";
+  d.textContent = "An older copy of tether is still running behind this page. Close every tether window, then double-click Tether.bat again.";
+  document.body.prepend(d);
+}
+async function refresh() {
+  S = await api("/api/state");
+  if (S.version !== PAGE_VERSION) staleServer();
+  renderSide(); route(); renderSide();
+}
+
+/* ---------- setup actions ---------- */
+$("keySave").onclick = async () => {
+  const key = $("keyInput").value.trim();
+  if (!key) return toast("Paste your key first.", true);
+  try {
+    S = await post("/api/key", { key }); $("keyInput").value = ""; delete $("keyEntry").dataset.replacing;
+    toast("Key saved. Checking it with Anthropic…"); renderSetup(); renderSide();
+    try { await post("/api/key/test"); toast("Key works ✓"); } catch (e) { toast(e.message, true); }
+  } catch (e) { toast(e.message, true); }
+};
+$("keyInput").onkeydown = (e) => { if (e.key === "Enter") $("keySave").click(); };
+$("keyTest").onclick = async () => { try { await post("/api/key/test"); toast("Key works ✓"); } catch (e) { toast(e.message, true); } };
+$("keyReplace").onclick = () => { $("keyEntry").dataset.replacing = "1"; renderSetup(); $("keyInput").focus(); };
+$("keyRemove").onclick = async () => {
+  if (!(await ask({ title: "Remove your API key?", body: "tether deletes it from this computer. You'll need to paste it again before the graph can update.", yes: "Remove key", danger: true }))) return;
+  S = await del("/api/key"); renderSetup(); renderSide(); toast("Key removed.");
+};
+
+async function setVault(path) {
+  try { S = await post("/api/vault", { path }); delete $("vaultChoice").dataset.changing; renderSetup(); renderSide(); toast("Vault set."); }
+  catch (e) { toast(e.message, true); }
+}
+$("pickExisting").onclick = async () => {
+  toast("A folder picker opened. It may be behind this window.");
+  try { const { path } = await post("/api/pick-folder?purpose=vault"); if (path) setVault(path); } catch (e) { toast(e.message, true); }
+};
+$("useExisting").onclick = () => $("existingPath").value.trim() ? setVault($("existingPath").value) : toast("Paste a folder path first.", true);
+$("pickParent").onclick = async () => {
+  toast("A folder picker opened. It may be behind this window.");
+  try { const { path } = await post("/api/pick-folder?purpose=parent"); if (path) $("newVaultParent").value = path; } catch (e) { toast(e.message, true); }
+};
+$("createVault").onclick = async () => {
+  try { S = await post("/api/vault/create", { parent: $("newVaultParent").value, name: $("newVaultName").value });
+        delete $("vaultChoice").dataset.changing; renderSetup(); renderSide(); toast("Vault created."); }
+  catch (e) { toast(e.message, true); }
+};
+$("vaultChange").onclick = () => { $("vaultChoice").dataset.changing = "1"; renderSetup(); };
+$("obsRecheck").onclick = () => refresh();
+$("setupDone").onclick = () => { forceSettings = false; route(); renderSide(); };
+$("settingsBtn").onclick = () => { forceSettings = true; Z = null; route(); renderSide(); };
+
+/* ---------- projects ---------- */
+$("newProjBtn").onclick = () => { forceSettings = false; current = null; $("newName").value = ""; route(); renderSide(); $("newName").focus(); };
+$("createProj").onclick = async () => {
+  const name = $("newName").value.trim();
+  if (!name) return toast("Give the project a name.", true);
+  try { const p = await post("/api/projects", { name }); await refresh(); openProject(p.name); }
+  catch (e) { toast(e.message, true); }
+};
+$("newName").onkeydown = (e) => { if (e.key === "Enter") $("createProj").click(); };
+
+async function openProject(name) {
+  forceSettings = false;
+  let p;
+  try { p = await api(`/api/projects/${enc(name)}`); } catch (e) { return toast(e.message, true); }
+  current = p.name; files = p.files;
+  $("projTitle").textContent = p.name;
+  $("question").value = savedQ = p.question || ""; $("urls").value = ""; $("topic").value = ""; $("since").value = "";
+  $("qHint").textContent = "Organizes the outline. Saved automatically.";
+  $("projObsidian").hidden = !p.built;
+  $("run").hidden = true; $("log").innerHTML = ""; act = { run: -1, len: 0, state: "", proj: null };
+  renderFiles(); renderZoteroProject(p); show("vProject"); renderSide(); updateGo(); pollActivity();
+}
+
+function renderFiles() {
+  $("files").innerHTML = files.map((f) => `<span class="chip"><span title="${esc(f.name)}">${esc(f.name)}</span><small style="color:var(--dim)">${f.kb} KB</small><button data-f="${esc(f.name)}" title="Remove from this project" aria-label="Remove ${esc(f.name)}">×</button></span>`).join("");
+  $("files").querySelectorAll("button").forEach((b) => b.onclick = async () => {
+    try { files = (await del(`/api/projects/${enc(current)}/sources/${enc(b.dataset.f)}`)).files; renderFiles(); nudge(); }
+    catch (e) { toast(e.message, true); }
+  });
+}
+
+function updateGo() {
+  $("addLinks").disabled = !$("urls").value.trim();
+  $("addTopic").disabled = !$("topic").value.trim();
+}
+["urls", "topic"].forEach((id) => $(id).addEventListener("input", updateGo));
+
+async function uploadFiles(list) {
+  const pdfs = [...list].filter((f) => f.name.toLowerCase().endsWith(".pdf") || f.type === "application/pdf");
+  if (!pdfs.length) return toast("Only PDFs can be added.", true);
+  const fd = new FormData(); pdfs.forEach((f) => fd.append("files", f));
+  toast(`Adding ${pdfs.length} PDF${pdfs.length > 1 ? "s" : ""}…`);
+  try {
+    const p = await api(`/api/projects/${enc(current)}/upload`, { method: "POST", body: fd });
+    files = p.files; renderFiles(); nudge();
+    p.skipped.length ? toast(`Skipped (not real PDFs): ${p.skipped.join(", ")}`, true) : toast("Added. Updating the graph…");
+    S = await api("/api/state"); renderSide();
+  } catch (e) { toast(e.message, true); }
+}
+const drop = $("drop");
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => uploadFiles(e.dataTransfer.files));
+drop.onclick = () => $("fileInput").click();
+drop.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("fileInput").click(); } };
+$("fileInput").onchange = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+/* ---------- live updates (no build button: changes rebuild the graph by themselves) ---------- */
+let act = { run: -1, len: 0, state: "", proj: null }, logOpen = false;
+const ago = (t) => { const s = Math.round(Date.now() / 1000 - t); return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+
+function nudge() { clearTimeout(pollTimer); pollTimer = setTimeout(pollActivity, 150); }
+async function pollActivity() {
+  clearTimeout(pollTimer);
+  if (view !== "vProject" || !current) return;
+  const proj = current;
+  let delay = 4000;
+  try {
+    const j = await api(`/api/projects/${enc(proj)}/activity?since=${act.proj === proj ? act.len : 0}&run=${act.proj === proj ? act.run : -1}`);
+    if (proj !== current) return;
+    if (act.proj !== proj || j.run !== act.run) { $("log").innerHTML = ""; }
+    j.log.forEach((line) => {
+      const d = document.createElement("div"); d.textContent = line;
+      if (line.startsWith("✗")) d.className = "err"; else if (line.startsWith("  details:")) d.className = "dim";
+      else if (line.includes("! ")) d.className = "warn";
+      $("log").appendChild(d);
+    });
+    $("log").scrollTop = $("log").scrollHeight;
+    const finished = act.proj === proj && act.state === "running" && j.state !== "running";
+    act = { run: j.run, len: j.log_len, state: j.state, proj };
+    renderLive(j);
+    delay = j.state === "running" || j.state === "waiting" ? 700 : 4000;
+    if (finished) {
+      if (j.state === "done" && j.stats && !j.stats.empty) toast(`“${proj}” is up to date.`);
+      try {                       // refreshing the side panels must never stop the polling
+        S = await api("/api/state"); renderSide();
+        const p = await api(`/api/projects/${enc(proj)}`); files = p.files; renderFiles(); renderZoteroProject(p);
+      } catch (e) { console.warn(e); }
+    }
+  } catch (e) {
+    console.warn("status poll failed", e); delay = 2500;
+  } finally {
+    if (view === "vProject" && current === proj) pollTimer = setTimeout(pollActivity, delay);
+  }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) nudge(); });
+
+function setStatus(kind, icon, title, sub) {
+  $("status").className = "status " + kind; $("sIcon").textContent = icon;
+  $("sTitle").textContent = title; $("sSub").textContent = sub;
+}
+
+function renderLive(j) {
+  const pct = Math.round(j.frac * 100);
+  const busy = j.state === "running" || j.state === "waiting";
+  const p = S.projects.find((x) => x.name === current);
+  const st = j.stats && !j.stats.empty ? j.stats : null;
+  const built = st || (p && p.built);
+  const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const src = st || (p && p.built ? p : null);
+  const counts = src ? `${pl(src.ideas ?? 0, "central idea")} from ${pl(src.papers, "paper")}` : "";
+
+  if (!S.key_set) setStatus("err", "!", "Add your API key to build the graph", "Settings → Anthropic API key. Your papers are saved and will be processed as soon as it's added.");
+  else if (j.state === "running") setStatus("busy", "", "Updating the graph…", `${j.stage} · ${pct}%${j.queued_again ? " · more changes are queued after this" : ""}`);
+  else if (j.state === "approval" && j.estimate) setStatus("wait", "$", `Ready to update: about $${j.estimate.cost.toFixed(2)}`,
+    (j.estimate.new_papers ? `${pl(j.estimate.new_papers, "new paper")} to read` : "Re-weaving the ideas")
+    + (j.estimate.reused_papers ? `, ${j.estimate.reused_papers} reused from before` : "")
+    + `. That's above your $${S.ask_above.toFixed(2)} ask-first limit (${S.monthly_cap ? `$${S.spent_month.toFixed(2)} of your $${S.monthly_cap.toFixed(2)} monthly cap used` : `$${S.spent_month.toFixed(2)} spent this month`}). Nothing has been spent yet.`);
+  else if (j.state === "paused") setStatus("", "‖", "Update paused", "Your papers are saved. Click Update now whenever you're ready; adding or removing a paper will ask again.");
+  else if (j.state === "waiting") setStatus("wait", "…", j.full_pending ? "Rebuilding from scratch shortly" : "Change detected", "The graph will update in a moment. Keep adding papers if you like; they'll be included.");
+  else if (j.state === "error") setStatus("err", "!", "The last update failed", `${j.error} Your notes from the previous update are unchanged.`);
+  else if (!j.has_content) setStatus("", "+", "No papers yet", "Drop PDFs below, import from Zotero, paste links or search a topic. The graph builds itself.");
+  else if (built) setStatus("ok", "✓", "Graph is up to date", counts + (j.updated ? ` · updated ${ago(j.updated)}` : "")
+    + (st && st.usage_text ? ` · last update ${st.usage_text}` : "") + ". Notes are in Obsidian.");
+  else setStatus("wait", "…", "Getting ready", "Checking this project's papers…");
+
+  $("sBar").hidden = j.state !== "running";
+  $("sBar").querySelector("i").style.width = pct + "%";
+  const asking = j.state === "approval";
+  $("approveBtn").hidden = !asking; $("declineBtn").hidden = !asking;
+  $("updateNow").hidden = busy || asking || !j.has_content || !S.key_set;
+  $("updateNow").textContent = j.state === "error" ? "Retry" : "Update now";
+  $("updateNow").title = "Process anything new. Reuses all work already done, so it's quick and cheap.";
+  $("fullRebuild").hidden = busy || asking || !j.has_content || !S.key_set || !built;
+  $("fullRebuild").title = "Re-read every paper and redo every comparison from zero.";
+
+  // details panel: log + stats
+  $("run").hidden = !(logOpen || j.state === "running" || j.state === "error" || (st && j.state === "done"));
+  $("bar").className = j.state === "running" ? "bar live" : j.state === "error" ? "bar err" : "bar";
+  $("bar").querySelector("i").style.width = (j.state === "done" ? 100 : pct) + "%";
+  $("stage").textContent = j.state === "running" ? j.stage : j.state === "error" ? "Update stopped" : "Last update";
+  $("pct").textContent = j.state === "running" ? pct + "%" : j.updated ? ago(j.updated) : "";
+  $("done").hidden = !(st && j.state === "done");
+  if (st) {
+    $("sPapers").textContent = st.papers; $("sClaims").textContent = st.claims;
+    $("sContra").textContent = st.contradictions; $("sIdeas").textContent = st.ideas ?? "–";
+    $("zSyncBtn").hidden = !st.zotero; $("zSyncMsg").textContent = st.zotero_error ? "Zotero sync failed (see the log above)." : "";
+  }
+  $("projObsidian").hidden = !built;
+}
+
+$("toggleLog").onclick = () => {
+  logOpen = !logOpen; $("toggleLog").textContent = logOpen ? "Hide details" : "Details";
+  if (logOpen) $("run").hidden = false; else pollActivity();
+};
+$("approveBtn").onclick = () => post(`/api/projects/${enc(current)}/approve`).then(nudge).catch((e) => toast(e.message, true));
+$("declineBtn").onclick = () => post(`/api/projects/${enc(current)}/decline`).then(nudge).catch((e) => toast(e.message, true));
+$("updateNow").onclick = () => post(`/api/projects/${enc(current)}/rebuild`, { full: false }).then(nudge).catch((e) => toast(e.message, true));
+$("fullRebuild").onclick = async () => {
+  const p = S.projects.find((x) => x.name === current);
+  const n = p ? p.papers : 0;
+  const ok = await ask({ title: "Rebuild from scratch?",
+    body: `tether will re-read all ${n || "the"} papers and redo every comparison, ignoring everything it saved. That costs about as much as building the project the first time. If the estimate is above your ask-first limit, you'll see the price and can still back out. Use it if the notes look wrong. For normal use, "Update now" is enough.`,
+    yes: "Rebuild from scratch" });
+  if (!ok) return;
+  try { await post(`/api/projects/${enc(current)}/rebuild`, { full: true }); toast("Rebuilding from scratch…"); nudge(); }
+  catch (e) { toast(e.message, true); }
+};
+$("addLinks").onclick = async () => {
+  const urls = $("urls").value.split(/\s+/).filter(Boolean);
+  try { await post(`/api/projects/${enc(current)}/add`, { urls }); $("urls").value = ""; updateGo(); toast(`Fetching ${urls.length} link${urls.length > 1 ? "s" : ""}…`); nudge(); }
+  catch (e) { toast(e.message, true); }
+};
+const addTopic = async () => {
+  if (!$("topic").value.trim()) return;
+  try { await post(`/api/projects/${enc(current)}/add`, { topic: $("topic").value, n: +$("n").value || 12, since: +$("since").value || null });
+        toast(`Searching for “${$("topic").value.trim()}”…`); $("topic").value = ""; updateGo(); nudge(); }
+  catch (e) { toast(e.message, true); }
+};
+$("addTopic").onclick = addTopic;
+$("topic").onkeydown = (e) => { if (e.key === "Enter") addTopic(); };
+let savedQ = "";
+const saveQuestion = async () => {
+  const q = $("question").value.trim();
+  if (q === savedQ || !current) return;
+  try { await post(`/api/projects/${enc(current)}/question`, { question: q }); savedQ = q; $("qHint").textContent = "Saved. The outline will update."; nudge(); }
+  catch (e) { toast(e.message, true); }
+};
+$("question").addEventListener("blur", saveQuestion);
+$("question").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("question").blur(); } };
+const openIn = (target) => post("/api/open", { project: current, target }).catch((e) => toast(e.message, true));
+$("projObsidian").onclick = $("doneObsidian").onclick = () => openIn("obsidian");
+$("projFolder").onclick = () => openIn("folder");
+
+
+/* ---------- zotero ---------- */
+let Z = null, zTier = null, zSel = new Set(), zColl = null, zItems = [], zTimer = null;
+async function loadZotero() { Z = await api("/api/zotero"); zTier = null; renderZotero(); }
+function currentTier() { return zTier || (Z.write.length ? "write" : Z.connected ? "read" : "off"); }
+function renderZotero() {
+  if (!Z) return;
+  const tier = currentTier();
+  document.querySelectorAll(".tier[data-tier]").forEach((b) => { b.classList.toggle("on", b.dataset.tier === tier); b.setAttribute("aria-checked", b.dataset.tier === tier); });
+  const okText = Z.write.length ? "✓ read & write" : Z.connected ? "✓ read" : "";
+  $("zOk").hidden = !okText; $("zOk").textContent = okText;
+  $("stepZot").classList.toggle("done", Z.connected);
+  $("zRead").hidden = tier === "off";
+  const readOn = Z.connected && Z.ok && !$("zReadForm").dataset.changing;
+  $("zReadForm").hidden = readOn; $("zReadOn").hidden = !readOn;
+  if (!$("zDir").value) $("zDir").value = Z.dir || Z.detected;
+  $("zDetected").textContent = !Z.connected && Z.detected ? "Found your Zotero folder automatically." : "";
+  $("zStat").textContent = Z.connected ? (Z.ok ? `${Z.items} items · ${Z.with_pdf} with PDFs · ${Z.collections} collections` : Z.error) : "";
+  $("zDirShown").textContent = Z.dir;
+  $("zWrite").hidden = tier !== "write";
+  if (tier === "write") {
+    const pending = !Z.write.length;
+    if (!pending) { $("pPapers").checked = Z.write.includes("papers"); $("pNotes").checked = Z.write.includes("notes"); $("pPdfs").checked = Z.write.includes("pdfs"); }
+    const haveKey = !!Z.key_hint && !$("zKeyEntry").dataset.replacing;
+    $("zKeyEntry").hidden = haveKey; $("zKeyShown").hidden = !haveKey; $("zKeyHint").textContent = Z.key_hint ? `key ${Z.key_hint}` : "";
+    $("zWriteState").textContent = !Z.connected ? "Allow read access first." : pending ? "Not saved yet: tether can't write until you save." : `Allowed: ${Z.write.join(", ")}`;
+    $("zSaveWrite").disabled = !Z.connected;
+  }
+}
+document.querySelectorAll(".tier[data-tier]").forEach((b) => b.onclick = async () => {
+  const want = b.dataset.tier, have = Z.write.length ? "write" : Z.connected ? "read" : "off";
+  try {
+    if (want === "off" && have !== "off") {
+      if (!(await ask({ title: "Turn Zotero off?", body: "tether forgets your Zotero folder, any write permissions and your Zotero key. Nothing in your Zotero library changes.", yes: "Turn off", danger: true }))) return;
+      Z = await post("/api/zotero/disconnect"); zTier = null; toast("Zotero access turned off.");
+    } else if (want === "read" && have === "write") {
+      if (!(await ask({ title: "Remove write access?", body: "tether keeps read access and forgets your Zotero API key. Nothing already in Zotero is removed.", yes: "Remove write access" }))) return;
+      Z = await post("/api/zotero/write", { perms: [] }); zTier = null; toast("Write access removed.");
+    } else zTier = want;
+  } catch (e) { toast(e.message, true); }
+  renderZotero(); S = await api("/api/state"); renderSide();
+});
+$("zPick").onclick = async () => {
+  toast("A folder picker opened. It may be behind this window.");
+  try { const { path } = await post("/api/zotero/pick-folder"); if (path) $("zDir").value = path; } catch (e) { toast(e.message, true); }
+};
+$("zConnect").onclick = async () => {
+  try { Z = await post("/api/zotero/connect", { dir: $("zDir").value }); delete $("zReadForm").dataset.changing;
+        toast(`Connected: ${Z.items} items, read only.`); renderZotero(); S = await api("/api/state"); renderSide(); }
+  catch (e) { toast(e.message, true); }
+};
+$("zChangeDir").onclick = () => { $("zReadForm").dataset.changing = "1"; renderZotero(); };
+$("zKeyReplace").onclick = () => { $("zKeyEntry").dataset.replacing = "1"; renderZotero(); $("zKey").focus(); };
+$("zSaveWrite").onclick = async () => {
+  const perms = [["pPapers", "papers"], ["pNotes", "notes"], ["pPdfs", "pdfs"]].filter(([id]) => $(id).checked).map(([, p]) => p);
+  if (!perms.length) return toast("Tick at least one, or choose Read instead.", true);
+  try {
+    const r = await post("/api/zotero/write", { perms, api_key: $("zKey").value });
+    Z = r; zTier = null; $("zKey").value = ""; delete $("zKeyEntry").dataset.replacing;
+    toast(`Write access saved${r.username ? " for " + r.username : ""}.`); renderZotero();
+  } catch (e) { toast(e.message, true); }
+};
+
+function renderZoteroProject(p) {
+  const on = S.zotero_connected;
+  $("zImportBtn").hidden = !on;
+  $("zImportHint").innerHTML = on ? "" : 'Have papers in Zotero? <a href="#" id="zGoSettings">Connect it in Settings</a>.';
+  const go = $("zGoSettings"); if (go) go.onclick = (e) => { e.preventDefault(); $("settingsBtn").click(); setTimeout(() => $("stepZot").scrollIntoView({ behavior: "smooth" }), 50); };
+  const abs = (p && p.abstracts) || [];
+  $("absList").innerHTML = abs.map((t) => `<span class="chip abs"><span title="${esc(t)}">${esc(t)}</span><button data-t="${esc(t)}" title="Remove from this project" aria-label="Remove ${esc(t)}">×</button></span>`).join("");
+  $("absList").querySelectorAll("button").forEach((b) => b.onclick = async () => {
+    try { renderZoteroProject(await post(`/api/projects/${enc(current)}/remove-abstract`, { title: b.dataset.t })); nudge(); }
+    catch (e) { toast(e.message, true); }
+  });
+}
+async function openZModal() {
+  zSel = new Set(); zColl = null; $("zmQuery").value = ""; $("zModal").hidden = false; await loadZItems(); $("zmQuery").focus();
+}
+async function loadZItems() {
+  let r;
+  try { r = await api(`/api/zotero/library?project=${enc(current)}${zColl !== null ? `&collection=${zColl}` : ""}&q=${enc($("zmQuery").value)}`); }
+  catch (e) { $("zModal").hidden = true; return toast(e.message, true); }
+  zItems = r.items;
+  $("zmColls").innerHTML = `<button class="coll ${zColl === null ? "on" : ""}" data-c=""><span>All items</span><small>${r.total}</small></button>` +
+    r.collections.map((c) => `<button class="coll ${zColl === c.id ? "on" : ""}" data-c="${c.id}" style="padding-left:${8 + c.depth * 14}px"><span>${esc(c.name)}</span><small>${c.count}</small></button>`).join("");
+  $("zmColls").querySelectorAll(".coll").forEach((b) => b.onclick = () => { zColl = b.dataset.c === "" ? null : +b.dataset.c; loadZItems(); });
+  $("zmItems").innerHTML = zItems.length ? zItems.map((it) => {
+    const usable = it.has_pdf || it.has_abstract, dis = !usable || it.in_project;
+    const meta = [it.authors.join(", "), it.year, it.venue].filter(Boolean).join(" · ");
+    const badge = it.in_project ? '<span class="badge in">in project</span>' : it.has_pdf ? '<span class="badge pdf">PDF</span>'
+      : it.has_abstract ? '<span class="badge abs">abstract only</span>' : '<span class="badge">no PDF</span>';
+    return `<label class="zitem ${dis ? "dis" : ""}"><input type="checkbox" data-k="${esc(it.key)}" ${dis ? "disabled" : ""} ${zSel.has(it.key) ? "checked" : ""}><div><div class="t">${esc(it.title)}</div><div class="m">${esc(meta)}</div></div>${badge}</label>`;
+  }).join("") : '<div class="muted" style="padding:20px">Nothing matches.</div>';
+  $("zmItems").querySelectorAll("input").forEach((cb) => cb.onchange = () => { cb.checked ? zSel.add(cb.dataset.k) : zSel.delete(cb.dataset.k); zCount(); });
+  $("zmInfo").textContent = r.truncated ? `Showing the 500 newest of ${r.count}. Search to narrow it down.` : `${r.count} shown`;
+  zCount();
+}
+function zCount() { $("zmCount").textContent = `${zSel.size} selected`; $("zmImport").disabled = !zSel.size; }
+$("zImportBtn").onclick = openZModal;
+$("zmClose").onclick = () => $("zModal").hidden = true;
+$("zModal").onclick = (e) => { if (e.target === $("zModal")) $("zModal").hidden = true; };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("zModal").hidden) $("zModal").hidden = true; });
+$("zmQuery").oninput = () => { clearTimeout(zTimer); zTimer = setTimeout(loadZItems, 220); };
+$("zmAll").onclick = () => { zItems.filter((i) => i.has_pdf && !i.in_project).forEach((i) => zSel.add(i.key)); loadZItems(); };
+$("zmImport").onclick = async () => {
+  try {
+    const r = await post(`/api/projects/${enc(current)}/zotero-import`, { keys: [...zSel] });
+    files = r.files; renderFiles(); renderZoteroProject(r); nudge(); $("zModal").hidden = true;
+    const i = r.imported; toast(`Imported ${i.pdf} PDF${i.pdf === 1 ? "" : "s"}${i.abstract ? ` + ${i.abstract} abstract-only` : ""}${i.skipped.length ? ` · skipped ${i.skipped.length}` : ""}.`);
+    S = await api("/api/state"); renderSide();
+  } catch (e) { toast(e.message, true); }
+};
+$("zSyncBtn").onclick = async () => {
+  $("zSyncMsg").textContent = "Syncing…";
+  try { const r = await post(`/api/projects/${enc(current)}/zotero-sync`); $("zSyncMsg").textContent = r.log.slice(-1)[0] || "Synced."; }
+  catch (e) { $("zSyncMsg").textContent = ""; toast(e.message, true); }
+};
+
+window.addEventListener("focus", () => { if (view !== "vProject") refresh().catch(() => {}); else nudge(); });
+refresh().catch((e) => toast(e.message, true));
+</script>
+</body>
+</html>

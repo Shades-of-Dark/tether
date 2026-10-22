@@ -1,0 +1,13 @@
+# secrets
+.env
+.tether_spend.json
+
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# outputs
+vault/
+*.pdf

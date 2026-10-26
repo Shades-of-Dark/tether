@@ -106,6 +106,11 @@ class FakeZoteroWeb:
         if sub.startswith("/collections/") and sub.endswith("/collections") and m == "GET":
             parent = sub.split("/")[2]
             return httpx.Response(200, json=[c for c in self.collections.values() if c["data"]["parentCollection"] == parent])
+        if sub.startswith("/collections/") and sub.endswith("/items/top") and m == "GET":
+            coll = sub.split("/")[2]
+            start = int(req.url.params.get("start", 0)); limit = int(req.url.params.get("limit", 25))
+            top = [i for i in self.items.values() if coll in i["data"].get("collections", []) and not i["data"].get("parentItem")]
+            return httpx.Response(200, json=top[start:start + limit])
         if sub == "/collections" and m == "POST":
             out = {}
             for i, obj in enumerate(json.loads(req.content)):

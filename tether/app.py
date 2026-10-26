@@ -13,6 +13,7 @@ replace it, but the server never sends it back (only a masked hint like sk-ant-â
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -151,6 +152,7 @@ def _project_summary(d: Path) -> dict:
         info["abstracts"] = [x["citation"]["title"] for x in json.loads(a.read_text(encoding="utf-8"))] if a.exists() else []
     except (OSError, json.JSONDecodeError, KeyError):
         info["abstracts"] = []
+    info["count"] = info["sources"] + len(info["abstracts"])
     return info
 
 
@@ -411,7 +413,8 @@ def _sync(project_dir: Path, log) -> Optional[dict]:
     log("Syncing to Zotero...")
     stats = sync_project(_web(key), project_dir, perms, local_lib=_zotero(), log=log)
     log(f"  Zotero: {stats['created']} added, {stats['linked']} filed into the collection, "
-        f"{stats['pdfs']} PDFs uploaded, {stats['notes'] + stats['notes_updated']} claim notes written")
+        f"{stats['pdfs']} PDFs uploaded, {stats.get('pdf_links', 0)} linked to their free PDF, "
+        f"{stats['notes'] + stats['notes_updated']} claim notes written")
     return stats
 
 
@@ -449,7 +452,13 @@ def zotero_import(name: str, body: ZImportIn):
     if not body.keys:
         raise HTTPException(400, "Select at least one paper.")
     lib = _require_zotero()
-    res = import_from_zotero(lib, body.keys, _project_dir(name))
+    d = _project_dir(name)
+    res = import_from_zotero(lib, body.keys, d)
+    skipped = set(res["skipped"])
+    builder.track_adds(d.name, [
+        {"key": f"zot:{k}", "label": lib.items[k].title, "title": lib.items[k].title, "cite": lib.items[k].citation().short(),
+         "state": "pdf" if lib.items[k].pdf is not None else "abstract"}
+        for k in body.keys if k in lib.items and k not in skipped and lib.items[k].title not in skipped])
     if res["pdf"] or res["abstract"]:
         _changed(name)
     return project(name) | {"imported": res}
@@ -478,6 +487,262 @@ def project(name: str):
     return _project_summary(d) | {"files": [{"name": f.name, "kb": round(f.stat().st_size / 1024)} for f in files]}
 
 
+def _graph(d: Path) -> dict:
+    try:
+        return json.loads((d / ".tether" / "graph.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+_quick: dict[tuple, object] = {}
+
+
+def _quick_citation(pdf: Path):
+    """Title / authors / year for a PDF that hasn't been through an update yet (metadata + first page only)."""
+    from .ingest import quick_citation
+    from .models import Citation
+
+    try:
+        key = (str(pdf), pdf.stat().st_mtime)
+    except OSError:
+        return Citation(title=pdf.stem)
+    if key not in _quick:
+        _quick[key] = quick_citation(pdf)
+    return _quick[key]
+
+
+def _quick_title(pdf: Path) -> str:
+    return _quick_citation(pdf).title
+
+
+def _cit_dict(c) -> dict:
+    from dataclasses import asdict
+    return c if isinstance(c, dict) else asdict(c)
+
+
+@app.get("/api/projects/{name}/papers")
+def project_papers(name: str):
+    """Every paper in the project, whether or not the graph has caught up with it yet."""
+    from .models import Citation
+
+    d = _project_dir(name)
+    cache = d / ".tether"
+    try:
+        known = json.loads((cache / "known_citations.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        known = {}
+    try:
+        abstracts = json.loads((cache / "abstract_only.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        abstracts = []
+    try:
+        zstate = json.loads((cache / "zotero_sync.json").read_text(encoding="utf-8")).get("items", {})
+    except (OSError, json.JSONDecodeError):
+        zstate = {}
+    g = _graph(d)
+    current = g.get("version") is not None
+    gpapers = g.get("papers", [])
+    by_file = {Path(x["path"]).name: x for x in gpapers if x.get("path")}
+    by_title = {_norm(x["citation"]["title"]): x for x in gpapers}
+    claim_paper = {c["id"]: c["paper_id"] for c in g.get("claims", [])}
+    n_claims: dict[str, int] = {}
+    for c in g.get("claims", []):
+        n_claims[c["paper_id"]] = n_claims.get(c["paper_id"], 0) + 1
+    n_ideas: dict[str, int] = {}
+    for i in g.get("ideas", []):
+        for pid in {claim_paper.get(e["claim"]) for e in i.get("evidence", [])}:
+            if pid:
+                n_ideas[pid] = n_ideas.get(pid, 0) + 1
+    lib = _zotero()
+
+    def in_zotero(cit: dict) -> Optional[bool]:
+        if cit.get("zotero_key") or _norm(cit.get("title", "")) in zstate:
+            return True
+        if lib is None:
+            return None if not config.get("TETHER_ZOTERO") else False
+        return lib.find(cit.get("title", ""), cit.get("doi")) is not None
+
+    def row(key, kind, cit: dict, gp: Optional[dict], source: str, file: str = "") -> dict:
+        pid = gp["id"] if gp else None
+        authors = cit.get("authors") or []
+        added = 0.0
+        try:
+            added = (d / "Sources" / file).stat().st_mtime if file else (cache / "abstract_only.json").stat().st_mtime
+        except OSError:
+            pass
+        return {"key": key, "kind": kind, "file": file, "title": cit.get("title") or file, "added": added,
+                "authors": authors[:3], "more_authors": max(0, len(authors) - 3), "year": cit.get("year"),
+                "venue": cit.get("venue"), "doi": cit.get("doi"), "url": cit.get("url"), "source": source,
+                "cite": Citation(**{k: v for k, v in cit.items() if k in Citation.__dataclass_fields__}).short()
+                        if cit.get("title") else file,
+                "in_graph": gp is not None, "paper_id": pid, "claims": n_claims.get(pid, 0) if pid else 0,
+                "ideas": n_ideas.get(pid, 0) if pid else 0,
+                "verified": bool(cit.get("verified")), "zotero": in_zotero(cit)}
+
+    rows = []
+    src = d / "Sources"
+    for f in sorted(src.glob("*.pdf")) if src.exists() else []:
+        gp = by_file.get(f.name)
+        cit = gp["citation"] if gp else (known.get(f.name) or _cit_dict(_quick_citation(f)))
+        source = "zotero" if cit.get("zotero_key") else "link" if f.name in known else "file"
+        rows.append(row(f"file:{f.name}", "pdf", cit, gp, source, f.name))
+    for a in abstracts:
+        cit = a["citation"]
+        gp = by_title.get(_norm(cit.get("title", "")))
+        rows.append(row(f"abs:{cit.get('title', '')}", "abstract", cit, gp, "zotero" if cit.get("zotero_key") else "link"))
+    in_graph = sum(r["in_graph"] for r in rows)
+    built = bool(gpapers)
+    for r in rows:
+        r["isolated"] = built and r["in_graph"] and r["claims"] > 0 and r["ideas"] == 0
+    have = {_norm(r["title"]) for r in rows}
+    n_suggested = sum(1 for w in g.get("cited", []) if not w.get("in_project") and (w.get("year") or w.get("doi"))
+                      and _norm(w["title"]) not in have)
+    return {"papers": rows, "total": len(rows), "in_graph": in_graph, "built": built and current,
+            "zotero_connected": bool(config.get("TETHER_ZOTERO")), "suggested": n_suggested}
+
+
+@app.get("/api/projects/{name}/suggested")
+def suggested(name: str):
+    """Papers your sources cite for claims they only report from other work, not yet in the project.
+    Shown like search results: nothing is added until you pick it."""
+    d = _project_dir(name)
+    g = _graph(d)
+    titles, dois = _already_have(d)
+    short = {p["id"]: _short_cite(p["citation"]) for p in g.get("papers", [])}
+    out = []
+    for w in g.get("cited", []):
+        if w.get("in_project") or not (w.get("year") or w.get("doi")):
+            continue
+        if _norm(w["title"]) in titles or (w.get("doi") and w["doi"].lower() in dois):
+            continue
+        by = list(dict.fromkeys(c["paper"] for c in w["cited_by"]))
+        authors = w.get("authors") or []
+        out.append({"id": w.get("openalex") or "", "doi": w.get("doi"), "title": w["title"], "authors": authors[:6],
+                    "more_authors": max(0, len(authors) - 6), "year": w.get("year"), "venue": w.get("venue"),
+                    "url": w.get("url"), "cited_by": len(by), "cited_by_papers": [short.get(pid, pid) for pid in by],
+                    "free_pdf": bool(w.get("free_pdf")), "type": "", "abstract": "", "in_project": False,
+                    "why": [{"paper": short.get(c["paper"], c["paper"]), "claim": c["claim"], "quote": c["quote"],
+                             "page": c.get("page")} for c in w["cited_by"][:3]]})
+    return {"results": out}
+
+
+def _short_cite(cit: dict) -> str:
+    from .models import Citation
+    return Citation(**{k: v for k, v in cit.items() if k in Citation.__dataclass_fields__}).short()
+
+
+def _zotero_web_for_tidy():
+    from .zotero_sync import parse_perms
+    key = config.get("ZOTERO_API_KEY")
+    if not (config.get("TETHER_ZOTERO") and key and "papers" in parse_perms(config.get("TETHER_ZOTERO_WRITE"))):
+        return None
+    return _web(key)
+
+
+@app.get("/api/projects/{name}/zotero-check")
+def zotero_check(name: str):
+    """Where Zotero and this project disagree: papers still in the project's Zotero collection that
+    aren't in the project any more (with how connected they were), and project papers not in Zotero."""
+    d = _project_dir(name)
+    if not config.get("TETHER_ZOTERO"):
+        return {"connected": False}
+    try:
+        state = json.loads((d / ".tether" / "zotero_sync.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    try:
+        removed = {_norm(r["title"]): r for r in json.loads((d / ".tether" / "removed.json").read_text(encoding="utf-8"))}
+    except (OSError, json.JSONDecodeError):
+        removed = {}
+    rows = project_papers(name)["papers"]
+    here = {_norm(r["title"]) for r in rows}
+    tracked = state.get("items", {})                     # norm title -> key, for everything tether added or filed
+    kept = set(state.get("kept", []))
+    web = _zotero_web_for_tidy()
+    coll = state.get("collection")
+    items, can_write, error = [], web is not None, None
+    if web is not None and coll:
+        try:
+            items = web.collection_items(coll)
+        except Exception as e:                           # offline: fall back to what tether remembers
+            error = f"Couldn't reach zotero.org ({type(e).__name__}); showing what tether remembers."
+            web = None
+    if not items:
+        items = [{"key": k, "title": t, "year": None, "tags": ["tether"], "version": None} for t, k in tracked.items()]
+    tracked_keys = set(tracked.values())
+    out = []
+    for it in items:
+        nt = _norm(it["title"])
+        if nt in here or it["key"] in kept:
+            continue
+        info = removed.get(nt)
+        if info and info.get("ideas") is not None:
+            conn = {"ideas": info["ideas"], "claims": info["claims"], "how": "at removal"}
+        elif it["key"] in tracked_keys and web is not None and state.get("notes", {}).get(it["key"]):
+            note = web.note_text(state["notes"][it["key"]]) or ""   # tether's claim note, as of the last sync
+            m = note.split("Ideas this paper feeds", 1)
+            conn = {"ideas": m[1].count("<li>") if len(m) > 1 else 0, "claims": None, "how": "at the last sync"}
+        else:
+            conn = None
+        out.append({"key": it["key"], "title": it["title"], "year": it.get("year") or (info or {}).get("year"),
+                    "added_by_tether": "tether" in (it.get("tags") or []),
+                    "in_project_before": it["key"] in tracked_keys or bool(info),
+                    "removed_at": (info or {}).get("removed_at"), "connection": conn})
+    missing = [{"title": r["title"], "cite": r["cite"], "in_graph": r["in_graph"]} for r in rows if r["zotero"] is False]
+    return {"connected": True, "can_write": can_write, "error": error, "collection": bool(coll),
+            "removed": out, "missing": missing}
+
+
+class TidyIn(BaseModel):
+    keys: list[str]
+    action: str                        # uncollect | trash | keep
+
+
+@app.post("/api/projects/{name}/zotero-tidy")
+def zotero_tidy(name: str, body: TidyIn):
+    d = _project_dir(name)
+    f = d / ".tether" / "zotero_sync.json"
+    try:
+        state = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(400, "This project hasn't been synced to Zotero yet.")
+    if body.action not in ("uncollect", "trash", "keep") or not body.keys:
+        raise HTTPException(400, "Pick papers and an action.")
+    done = []
+    if body.action == "keep":
+        state["kept"] = sorted(set(state.get("kept", [])) | set(body.keys))
+        done = list(body.keys)
+    else:
+        web = _zotero_web_for_tidy()
+        if web is None:
+            raise HTTPException(400, "This needs Zotero write access with 'Add papers' allowed (Settings â†’ Zotero).")
+        coll = state.get("collection")
+        try:
+            allowed = {it["key"]: it for it in web.collection_items(coll)} if coll else {}
+            for k in body.keys:
+                it = allowed.get(k)
+                if it is None:
+                    continue                                   # only items in this project's collection
+                if body.action == "trash":
+                    if "tether" not in (it.get("tags") or []):
+                        continue                               # never trash something you added yourself
+                    web.trash(k)
+                else:
+                    web.uncollect(k, coll)
+                done.append(k)
+        except Exception as e:
+            raise HTTPException(400, f"Zotero refused the change ({type(e).__name__}: {e}).")
+        state["items"] = {t: k for t, k in state.get("items", {}).items() if k not in done}
+    f.write_text(json.dumps(state, indent=1), encoding="utf-8")
+    return {"done": done, "skipped": [k for k in body.keys if k not in done]}
+
+
+@app.post("/api/projects/{name}/adds/clear")
+def clear_adds(name: str):
+    builder.clear_adds(_project_dir(name).name)
+    return {"ok": True}
+
+
 @app.post("/api/projects/{name}/upload")
 async def upload(name: str, files: list[UploadFile] = File(...)):
     from .pipeline import add_to_sources
@@ -495,18 +760,50 @@ async def upload(name: str, files: list[UploadFile] = File(...)):
                 continue
             (tmp / fname).write_bytes(data)
             saved.append(tmp / fname)
-        add_to_sources(saved, d / "Sources")
+        placed = add_to_sources(saved, d / "Sources")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if saved:
+        builder.track_adds(d.name, [{"key": f"file:{dest.name}", "label": src.name, "state": "pdf", "file": dest.name,
+                                     "title": _quick_title(dest)} for src, dest in zip(saved, placed)])
         _changed(d.name)
     return project(name) | {"skipped": skipped}
 
 
+def _record_removal(d: Path, file: str = "", title: str = "") -> None:
+    """Remember what a removed paper was and how connected it was, so the Zotero check can tell
+    you later (after you've forgotten its name) whether to take it out of Zotero too."""
+    g = _graph(d)
+    gp = None
+    for x in g.get("papers", []):
+        if (file and x.get("path") and Path(x["path"]).name == file) or (title and _norm(x["citation"]["title"]) == _norm(title)):
+            gp = x
+            break
+    cit = gp["citation"] if gp else ({"title": title} if title else _cit_dict(_quick_citation(d / "Sources" / file)))
+    entry = {"title": cit.get("title") or file, "doi": cit.get("doi"), "year": cit.get("year"),
+             "cite": _short_cite(cit) if cit.get("title") else file, "removed_at": time.time(), "ideas": None, "claims": None}
+    if gp:
+        cp = {c["id"]: c["paper_id"] for c in g.get("claims", [])}
+        entry["claims"] = sum(1 for c in g.get("claims", []) if c["paper_id"] == gp["id"])
+        entry["ideas"] = sum(1 for i in g.get("ideas", []) if any(cp.get(e["claim"]) == gp["id"] for e in i.get("evidence", [])))
+    f = d / ".tether" / "removed.json"
+    try:
+        rows = json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
+    except (OSError, json.JSONDecodeError):
+        rows = []
+    rows = [r for r in rows if _norm(r["title"]) != _norm(entry["title"])] + [entry]
+    f.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 @app.delete("/api/projects/{name}/sources/{filename}")
 def remove_source(name: str, filename: str):
-    f = _project_dir(name) / "Sources" / Path(filename).name
+    d = _project_dir(name)
+    f = d / "Sources" / Path(filename).name
     if f.suffix.lower() == ".pdf" and f.exists():
+        try:
+            _record_removal(d, file=f.name)
+        except Exception:                          # never let bookkeeping block a removal
+            pass
         f.unlink()
         _changed(name)
     return project(name)
@@ -520,7 +817,12 @@ class AbstractIn(BaseModel):
 def remove_abstract_paper(name: str, body: AbstractIn):
     from .pipeline import remove_abstract
 
-    remove_abstract(_project_dir(name), body.title)
+    d = _project_dir(name)
+    try:
+        _record_removal(d, title=body.title)
+    except Exception:
+        pass
+    remove_abstract(d, body.title)
     _changed(name)
     return project(name)
 
@@ -536,22 +838,37 @@ def _has_content(out: Path) -> bool:
         return False
 
 
-def _rebuild(name: str, work: dict, log, stage) -> dict:
+def _rebuild(name: str, work: dict, builder_log, stage) -> dict:
     """One rebuild of one project. Runs on the AutoBuilder's worker thread."""
     from .autobuild import UserFacing
     from .llm import ClaudeLLM
     from .pipeline import Reporter, fetch_remote, run
 
     out = _project_dir(name)
+    logfile = out / ".tether" / "activity.log"
+    try:
+        logfile.write_text(time.strftime("Update started %Y-%m-%d %H:%M\n"), encoding="utf-8")
+    except OSError:
+        pass
+
+    def log(m: str) -> None:                     # shown live, and kept so Details still has it after a restart
+        builder_log(m)
+        try:
+            with open(logfile, "a", encoding="utf-8") as f:
+                f.write(m + "\n")
+        except OSError:
+            pass
+
     vault = _vault()
     if not config.api_key():
         raise UserFacing("Add your Anthropic API key in Settings, then retry.")
-    rep = Reporter(log, stage)
+    rep = Reporter(log, stage, lambda what: builder.note_now(name, what))
     if work.get("full"):
         log("Rebuilding from scratch: every paper will be read again.")
     if work["urls"] or work["topics"]:
         stage("Fetching papers", 0.01)
-        got = fetch_remote(out, work["urls"], work["topics"], rep)
+        got = fetch_remote(out, work["urls"], work["topics"], rep,
+                           on_item=lambda url, **kw: builder.update_add(name, url, **kw))
         log(f"Added {got['pdf']} PDF{'s' if got['pdf'] != 1 else ''}"
             + (f" and {got['abstract']} abstract-only paper{'s' if got['abstract'] != 1 else ''}" if got["abstract"] else ""))
     if not _has_content(out):
@@ -577,6 +894,8 @@ def _rebuild(name: str, work: dict, log, stage) -> dict:
     log(f"Claude usage: {stats['usage_text']}")
     try:
         stage("Syncing to Zotero", 0.99)
+        builder.note_now(name, {"paper": None, "index": None,
+                                "step": "Adding new papers to your Zotero collection and linking their free PDFs"})
         stats["zotero"] = _sync(out, log)
     except Exception as e:                       # the graph is built; report the sync problem separately
         log(f"! Zotero sync failed: {type(e).__name__}: {e}")
@@ -625,20 +944,78 @@ def _changed(name: str, **kw) -> None:
 
 class AddIn(BaseModel):
     urls: list[str] = []
-    topic: str = ""
-    n: int = 12
-    since: Optional[int] = None
+    works: list[str] = []          # OpenAlex ids picked from a search
+    topic: str = ""                # no longer accepted: searches are reviewed before anything is added
 
 
 @app.post("/api/projects/{name}/add")
 def add_sources(name: str, body: AddIn):
     d = _project_dir(name)
+    if body.topic.strip():
+        raise HTTPException(400, "Search first, then pick the papers to add.")
     urls = [u.strip() for u in body.urls if u.strip()]
-    topics = [(body.topic.strip(), max(1, min(body.n, 40)), body.since)] if body.topic.strip() else []
-    if not (urls or topics):
-        raise HTTPException(400, "Paste a link or enter search terms.")
-    builder.request(d.name, urls=urls, topics=topics, delay=0)
-    return {"ok": True}
+    urls += [f"https://openalex.org/{w.strip()}" for w in body.works if re.fullmatch(r"W\d+", w.strip())]
+    if not urls:
+        raise HTTPException(400, "Paste a link or pick papers from a search.")
+    builder.track_adds(d.name, [{"key": u, "label": u, "state": "queued"} for u in urls])
+    builder.request(d.name, urls=urls, delay=0)
+    return {"ok": True, "added": len(urls)}
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+
+
+def _already_have(d: Path) -> tuple[set[str], set[str]]:
+    """(titles, dois) of the papers already in a project, to mark them in search results."""
+    titles, dois = set(), set()
+    cache = d / ".tether"
+    for fname in ("known_citations.json", "abstract_only.json", "graph.json"):
+        f = cache / fname
+        try:
+            data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not data:
+            continue
+        cits = (list(data.values()) if fname == "known_citations.json" else
+                [a["citation"] for a in data] if fname == "abstract_only.json" else
+                [p.get("citation", {}) for p in data.get("papers", [])])
+        for c in cits:
+            titles.add(_norm(c.get("title", "")))
+            if c.get("doi"):
+                dois.add(c["doi"].lower())
+    titles.discard("")
+    return titles, dois
+
+
+class SearchIn(BaseModel):
+    topic: str
+    n: int = 20
+    since: Optional[int] = None
+    oa_only: bool = True
+
+
+@app.post("/api/projects/{name}/search")
+def search_papers(name: str, body: SearchIn):
+    """Look papers up for review. Nothing is downloaded, added to the project, or sent to Zotero."""
+    import httpx
+    from .sources import candidate, search_topic
+
+    d = _project_dir(name)
+    if not body.topic.strip():
+        raise HTTPException(400, "Enter search terms.")
+    try:
+        works = search_topic(body.topic.strip(), max(1, min(body.n, 50)), body.since, oa_only=body.oa_only)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Couldn't reach OpenAlex ({type(e).__name__}). Check your connection and try again.")
+    titles, dois = _already_have(d)
+    out = []
+    for w in works:
+        c = candidate(w)
+        c["in_project"] = _norm(c["title"]) in titles or bool(c["doi"] and c["doi"].lower() in dois)
+        out.append(c)
+    return {"results": out}
 
 
 class QuestionIn(BaseModel):
@@ -696,6 +1073,13 @@ def activity(name: str, since: int = 0, run: int = -1):
     if content and st["state"] in ("idle", "done") and config.api_key() and _stale(d):
         builder.request(d.name, delay=0)
         st = builder.status(d.name, since, run)
+    if st["state"] == "idle" and st["run"] == 0 and not st["log"] and since == 0:
+        f = d / ".tether" / "activity.log"           # tether was restarted: show the last update's log
+        try:
+            st["log"] = f.read_text(encoding="utf-8").splitlines()[-400:] if f.exists() else []
+            st["log_len"], st["log_from_file"] = len(st["log"]), True
+        except OSError:
+            pass
     return st | {"has_content": content}
 
 
@@ -727,7 +1111,9 @@ def shutdown():
 
 class OpenIn(BaseModel):
     project: str
-    target: str = "obsidian"      # obsidian | folder
+    target: str = "obsidian"      # obsidian | folder | pdf | note
+    file: str = ""                # pdf: a file in Sources
+    paper: str = ""               # note: a paper id from the graph (P07)
 
 
 @app.post("/api/open")
@@ -735,6 +1121,22 @@ def open_thing(body: OpenIn):
     d = _project_dir(body.project)
     if body.target == "folder":
         _open_uri(str(d))
+        return {"ok": True}
+    if body.target == "pdf":
+        f = d / "Sources" / Path(body.file).name
+        if f.suffix.lower() != ".pdf" or not f.exists():
+            raise HTTPException(404, "That PDF isn't in this project any more.")
+        _open_uri(str(f))
+        return {"ok": True}
+    if body.target == "note":
+        from .models import Paper
+        from .vault import paper_note
+        g = _graph(d)
+        hit = next((x for x in g.get("papers", []) if x.get("id") == body.paper), None) if g else None
+        note = d / "Papers" / f"{paper_note(Paper.from_dict(hit))}.md" if hit else None
+        if not note or not note.exists():
+            raise HTTPException(400, "This paper doesn't have a note yet. It gets one when the graph updates.")
+        _open_uri(f"obsidian://open?path={quote(str(note.resolve()), safe='')}")
         return {"ok": True}
     overview = d / "00 Overview.md"
     if not overview.exists():

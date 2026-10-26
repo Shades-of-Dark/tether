@@ -42,6 +42,14 @@ def idea_note(i: Idea) -> str:
     return safe(f"{i.id} {i.title}", 70)
 
 
+def _work_cite(w) -> str:
+    if not w.authors:
+        return str(w.year or "n.d.")
+    last = w.authors[0].split()[-1]
+    who = last if len(w.authors) == 1 else (f"{last} & {w.authors[1].split()[-1]}" if len(w.authors) == 2 else f"{last} et al.")
+    return f"{who}, {w.year or 'n.d.'}"
+
+
 def _n(k: int, word: str) -> str:
     return f"{k} {word}{'' if k == 1 else 's'}"
 
@@ -106,7 +114,12 @@ def _merge_graph_colors(vault_root: Path, prefix: str) -> None:
 
 def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas: list[Idea], outline: dict,
                 rejected: list[Rejected], dropped_points: int, question: str = "",
-                vault_root: Optional[Path] = None, trimmed: int = 0) -> None:
+                vault_root: Optional[Path] = None, trimmed: int = 0, single: Optional[list[Idea]] = None,
+                cited: Optional[list] = None) -> None:
+    from .stages import disagreeing_papers, tensions as find_tensions
+
+    single = single or []
+    cited = cited or []
     out = Path(out)
     _clean_previous(out)
     for sub in ("Ideas", "Papers"):
@@ -152,7 +165,12 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
         return seen
 
     def cite(c: Claim) -> str:
-        return f"{L_paper(papers[c.paper_id])}, p. {c.page}"
+        """In-text citation, APA style: (Huang et al., 2026, p. 6), the name linking to the paper's note."""
+        return f"({L_paper(papers[c.paper_id])}, p. {c.page})"
+
+    def quoted(c: Claim, linked: bool = True) -> str:
+        who = cite(c) if linked else f"({papers[c.paper_id].citation.short()}, p. {c.page})"
+        return f"“{c.quote.strip().strip(chr(34)).strip()}” {who}"
 
     def compact_refs(cs: list[Claim]) -> str:
         """'Chen et al., 2024 (pp. 3, 7); Ruiz, 2022 (p. 2)', each paper linked once."""
@@ -164,15 +182,15 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
         out = []
         for pid, pg in pages.items():
             pg = sorted(pg)
-            out.append(f"{L_paper(papers[pid])} ({'p.' if len(pg) == 1 else 'pp.'} {', '.join(map(str, pg))})")
-        return "; ".join(out)
+            out.append(f"{L_paper(papers[pid])}, {'p.' if len(pg) == 1 else 'pp.'} {', '.join(map(str, pg))}")
+        return "(" + "; ".join(out) + ")" if out else ""
 
     def evidence_block(c: Claim) -> list[str]:
         p = papers[c.paper_id]
-        lines = [f"- {c.text} ({cite(c)}{' · ' + L_pdf(p, c.page) if p.path else ''})"]
+        lines = [f"- {c.text} {cite(c)}{' · ' + L_pdf(p, c.page) if p.path else ''}"]
         if c.qualifiers:
             lines.append(f"    - *Scope:* {c.qualifiers}")
-        lines.append(f"    > {c.quote}")
+        lines.append(f"    > {quoted(c)}")
         return lines
 
     # ---- ideas
@@ -181,7 +199,7 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
         lines = ["---", MARKER, "type: idea", f"papers: {len(ps)}", f"evidence: {len(i.evidence)}",
                  f"check: {i.check}", "tags: [idea]", "---", "", f"# {i.title}", "", f"**{i.statement}**", ""]
         if i.scope:
-            lines += ["> [!warning] Scope", f"> The fact-check narrowed this idea: {i.scope}", ""]
+            lines += ["> [!warning] Narrowed by the fact-check", f"> {i.scope}", ""]
         lines += [f"Drawn from {_n(len(ps), 'paper')}: " + ", ".join(L_paper(p) for p in ps), ""]
         for stance in ("supports", "qualifies", "contradicts"):
             group = [claim[e.claim] for e in i.evidence if e.stance == stance]
@@ -218,15 +236,39 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
             lines += ["> [!caution] Only the abstract was available; claims come from the abstract alone.", ""]
         if ideas_of_paper.get(p.id):
             lines += ["## Feeds these ideas", *[f"- {L_idea(i)}" for i in ideas_of_paper[p.id]], ""]
+        else:
+            lines += ["> [!note] Shares no central idea with the other papers",
+                      "> Either it's off-topic for this project, or it covers ground nobody else here does. "
+                      "See the Overview.", ""]
+        mine_single = [s1 for s1 in single if claim[s1.evidence[0].claim].paper_id == p.id]
+        if mine_single:
+            lines.append("## Single-source findings")
+            lines.append("*Results only this paper reports in the project. Cite them as this paper's finding.*")
+            lines += [f"- {s1.title}" for s1 in mine_single]
+            lines.append("")
+        theirs = [(w, c) for w in cited for c in w.cited_by if c["paper"] == p.id]
+        if theirs:
+            lines.append("## Cited work behind its claims")
+            lines.append("*Claims this paper reports from other work. They don't count as this paper's evidence; "
+                         "the cited paper is the source to read.*")
+            for w, c in theirs:
+                who = _work_cite(w)
+                where = f"p. {c['page']}" if c.get("page") else "page not found"
+                tail = " · already in this project" if getattr(w, "in_project", False) else (
+                    f" · [open]({w.url})" if w.url else "") + (" · free PDF" if w.free_pdf else "")
+                lines.append(f"- {c['claim']}")
+                lines.append(f"    > “{c['quote'].strip()}” ({p.citation.short()}, {where})")
+                lines.append(f"    - Cites: **{w.title}** ({who}){tail}")
+            lines.append("")
         if mine:
             lines.append("## Key claims")
             for c in mine:
                 tag = {"finding": "Finding", "method": "Method", "limitation": "Limitation",
                        "hypothesis": "Hypothesis", "definition": "Definition"}.get(c.kind, c.kind.title())
-                lines.append(f"- **{tag}** (p. {c.page}{' · ' + L_pdf(p, c.page) if p.path else ''}): {c.text}")
+                lines.append(f"- **{tag}**: {c.text} (p. {c.page}{' · ' + L_pdf(p, c.page) if p.path else ''})")
                 if c.qualifiers:
                     lines.append(f"    - *Scope:* {c.qualifiers}")
-                lines.append(f"    > {c.quote}")
+                lines.append(f"    > {quoted(c, linked=False)}")
             lines.append("")
         else:
             lines += ["No claims from this paper passed verification. See [[Audit]].", ""]
@@ -247,17 +289,27 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
             i = idea_by_id.get(iid)
             if not i:
                 continue
-            lines.append(f"- **{L_idea(i)}**: {i.statement}" + (f" *(scope: {i.scope})*" if i.scope else ""))
+            lines.append(f"- **{L_idea(i)}**: {i.statement}"
+                         + (f" *(scope: {i.scope})*" if i.scope and not i.narrowed_from else ""))
             for stance, label in (("supports", "Evidence"), ("qualifies", "Qualified by"), ("contradicts", "Against")):
                 refs = compact_refs([claim[e.claim] for e in i.evidence if e.stance == stance])
                 if refs:
                     lines.append(f"    - {label}: {refs}")
         lines.append("")
+    if single:
+        lines += ["## Single-source findings",
+                  "*Only one paper in this project reports each of these. Cite them as that paper's result, not as "
+                  "a consensus, or find papers that replicate or dispute them.*", ""]
+        for s1 in single:
+            cs = [claim[e.claim] for e in s1.evidence]
+            lines.append(f"- **{s1.title}** {compact_refs(cs)}")
+            lines += [f"    - {c.text}: {quoted(c)}" for c in cs]
+        lines.append("")
     if outline.get("gaps"):
         lines.append("## Open questions and gaps")
         for g in outline["gaps"]:
             refs = compact_refs([claim[cid] for cid in g["claims"] if cid in claim])
-            lines.append(f"- {g['text']}" + (f" ({refs})" if refs else ""))
+            lines.append(f"- {g['text']}" + (f" {refs}" if refs else ""))
         lines.append("")
     (out / "Lit Review Outline.md").write_text("\n".join(lines), encoding="utf-8")
 
@@ -278,11 +330,11 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
 
     # ---- overview
     plist = list(papers.values())
-    tensions = [i for i in ideas if any(e.stance == "contradicts" for e in i.evidence)
-                or any(l.kind == "in_tension" for l in i.links)]
     lines = ["# Overview", "",
              f"{_n(len(ideas), 'central idea')} drawn from {_n(len(plist), 'paper')} "
-             f"({_n(len(claims), 'verified claim')}). Start with {link('Lit Review Outline')}.", "",
+             f"({_n(len(claims), 'verified claim')}). Every idea draws on at least two papers"
+             + (f"; {_n(len(single), 'single-source finding')} are listed separately in the outline" if single else "")
+             + f". Start with {link('Lit Review Outline')}.", "",
              "## The ideas", ""]
     for i in ideas:
         ps = papers_of(i)
@@ -301,9 +353,34 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
         lines.append(f"| {cell(L_idea(i))} | " + " | ".join(row) + " |")
     lines += ["", "● supporting or qualifying evidence · ✕ contradicting evidence", "",
               "**Papers:** " + " · ".join(f"{p.id} = {L_paper(p)}" for p in plist), ""]
-    if tensions:
+    disagree = [(i, disagreeing_papers(i, claim)) for i in ideas]
+    disagree = [(i, ps) for i, ps in disagree if ps]
+    pairs = find_tensions(ideas, claim)
+    if disagree or pairs:
         lines += ["## Where the papers disagree", ""]
-        lines += [f"- {L_idea(i)}" for i in tensions]
+        for i, ps in disagree:
+            lines.append(f"- {L_idea(i)}: contradicted by " + ", ".join(L_paper(papers[pid]) for pid in ps))
+        for a, b, why in pairs:
+            lines.append(f"- {L_idea(a)} vs {L_idea(b)}" + (f": {why}" if why else ""))
+        lines.append("")
+    used = {claim[e.claim].paper_id for i in ideas for e in i.evidence}
+    isolated = [p for p in plist if p.id not in used]
+    if isolated and ideas:
+        lines += ["## Papers that share no idea with the others", "",
+                  "These papers didn't connect to any central idea. They may be off-topic for this project "
+                  "(consider removing them), or they cover ground no other paper here does (consider adding papers "
+                  "that do). Their own results are under Single-source findings in the outline.", ""]
+        lines += [f"- {L_paper(p)}: {p.citation.title}" for p in isolated]
+        lines.append("")
+    suggest = [w for w in cited if not getattr(w, "in_project", False) and (w.year or w.doi)]
+    if suggest:
+        lines += ["## Suggested reading: cited by your papers", "",
+                  "Papers your sources rely on for claims they report from other work. The more of your papers cite one, "
+                  "the more likely it belongs in this project. Add them from the app (Suggested papers).", ""]
+        for w in suggest[:15]:
+            by = list(dict.fromkeys(c["paper"] for c in w.cited_by))
+            lines.append(f"- **{w.title}** ({_work_cite(w)})" + (f" · [open]({w.url})" if w.url else "")
+                         + f": cited by " + ", ".join(L_paper(papers[pid]) for pid in by if pid in papers))
         lines.append("")
     lines += [f"See {link('References')} for the bibliography and {link('Audit')} for what was filtered out.", ""]
     (out / "00 Overview.md").write_text("\n".join(lines), encoding="utf-8")
@@ -317,7 +394,14 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
              f"- Ideas narrowed by the fact-check: **{sum(i.check == 'partial' for i in ideas)}**",
              f"- Fuzzy quote matches (score < 100, check these first): **{sum(c.match_score < 100 for c in claims)}**",
              f"- Ideas, sections or gaps removed for citing no real claim: **{dropped_points}**", ""]
+    lines += [f"- Single-paper results kept as single-source findings (not central ideas): **{len(single)}**"]
     lines += [f"- Rejected ({k}): **{n}**" for k, n in reasons.most_common()]
+    narrowed = [i for i in ideas if i.narrowed_from]
+    if narrowed:
+        lines += ["", "## Ideas the fact-check reworded", ""]
+        for i in narrowed:
+            lines += [f"### {L_idea(i)}", f"- Was: {i.narrowed_from}", f"- Now: {i.statement}",
+                      f"- Why: {i.scope}", ""]
     lines += ["", "## Rejected", ""]
     for r in rejected:
         lines += [f"### {r.paper_id}: {r.reason}", f"- {'Idea' if r.paper_id == 'idea' else 'Claim'}: {r.text}",

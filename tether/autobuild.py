@@ -33,7 +33,7 @@ class AutoBuilder:
         return self._p.setdefault(name, {
             "state": "idle", "stage": "", "frac": 0.0, "log": [], "run": 0, "stats": None, "error": None,
             "updated": None, "dirty": False, "due": 0.0, "pending": self._empty(),
-            "timer": None, "error_detail": None, "estimate": None})
+            "timer": None, "error_detail": None, "estimate": None, "now": {}, "adds": []})
 
     @staticmethod
     def _empty() -> dict:
@@ -86,7 +86,35 @@ class AutoBuilder:
                     "log": list(log), "log_len": len(p["log"]), "stats": p["stats"], "error": p["error"],
                     "error_detail": p["error_detail"], "full_pending": p["pending"]["full"],
                     "estimate": p["estimate"] if p["state"] == "approval" else None,
-                    "updated": p["updated"], "queued_again": p["dirty"] and p["state"] == "running"}
+                    "updated": p["updated"], "queued_again": p["dirty"] and p["state"] == "running",
+                    "now": dict(p["now"]) if p["state"] == "running" else {},
+                    "adds": [dict(a) for a in p["adds"]]}
+
+    # ------------------------------------------------------------------ live detail
+    def note_now(self, name: str, what: dict) -> None:
+        """Merge in what the running update is doing right now (shown in Details)."""
+        with self._lock:
+            self._get(name)["now"].update(what)
+
+    def track_adds(self, name: str, items: list[dict]) -> None:
+        """Papers the user just added, shown as a checklist until dismissed. A new batch replaces a
+        finished one; while one is still in progress, new items join it."""
+        with self._lock:
+            p = self._get(name)
+            if p["adds"] and all(a["state"] not in ("queued", "fetching") for a in p["adds"]):
+                p["adds"] = []
+            have = {a["key"] for a in p["adds"]}
+            p["adds"] += [dict(i) for i in items if i["key"] not in have]
+
+    def update_add(self, name: str, key: str, **fields) -> None:
+        with self._lock:
+            for a in self._get(name)["adds"]:
+                if a["key"] == key:
+                    a.update(fields)
+
+    def clear_adds(self, name: str) -> None:
+        with self._lock:
+            self._get(name)["adds"] = []
 
     def forget(self, name: str) -> None:
         with self._lock:
@@ -106,7 +134,7 @@ class AutoBuilder:
             _, name = min(ready)
             p = self._p[name]
             work = p["pending"]
-            p.update(dirty=False, pending=self._empty(), state="running", estimate=None,
+            p.update(dirty=False, pending=self._empty(), state="running", estimate=None, now={},
                      stage="Starting", frac=0.0, log=[], error=None, error_detail=None, run=p["run"] + 1)
             self._running = name
         threading.Thread(target=self._work, args=(name, work), daemon=True).start()

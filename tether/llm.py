@@ -111,9 +111,20 @@ class BadOutput(RuntimeError):
     pass
 
 
+class CutOff(BadOutput):
+    """Claude hit the output limit. Retrying the same request would just pay for the same cut-off."""
+
+    def __init__(self, name: str, limit: int):
+        super().__init__(f"Claude's {name!r} answer didn't fit in {limit:,} tokens.")
+        self.name, self.limit = name, limit
+
+
+MAX_OUTPUT = 16000          # SDK requires streaming above ~21k; nothing in tether should need more
+
+
 class LLM(Protocol):
     def call(self, *, system: str, user: str, name: str, schema: dict, judge: bool = False,
-             role: Optional[str] = None) -> dict: ...
+             role: Optional[str] = None, max_tokens: Optional[int] = None) -> dict: ...
 
 
 def strict(schema: dict) -> dict:
@@ -189,8 +200,8 @@ class ClaudeLLM:
             _add_spend(cost)
 
     # ------------------------------------------------------------ one request
-    def _request(self, mode: str, model: str, system: str, user: str, name: str, schema: dict):
-        kw = dict(model=model, max_tokens=self.max_tokens, messages=[{"role": "user", "content": user}])
+    def _request(self, mode: str, model: str, system: str, user: str, name: str, schema: dict, max_tokens: int):
+        kw = dict(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": user}])
         if mode == "structured":
             kw["output_config"] = {"format": {"type": "json_schema", "schema": strict(schema)}}
         elif mode == "tool":
@@ -207,14 +218,14 @@ class ClaudeLLM:
         kw["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         return self.client.messages.create(**kw)
 
-    def _extract(self, mode: str, resp, name: str, schema: dict) -> dict:
+    def _extract(self, mode: str, resp, name: str, schema: dict, limit: int) -> dict:
+        if resp.stop_reason == "max_tokens":
+            raise CutOff(name, limit)
         if mode == "tool":
             for b in resp.content:
                 if getattr(b, "type", "") == "tool_use":
                     return b.input
         text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
-        if resp.stop_reason == "max_tokens":
-            raise BadOutput("Claude's answer was cut off (too long). Try fewer papers per project or a shorter PDF.")
         try:
             out = parse_json(text)
         except (json.JSONDecodeError, ValueError):
@@ -225,8 +236,9 @@ class ClaudeLLM:
 
     # ------------------------------------------------------------ public
     def call(self, *, system: str, user: str, name: str, schema: dict, judge: bool = False,
-             role: Optional[str] = None) -> dict:
+             role: Optional[str] = None, max_tokens: Optional[int] = None) -> dict:
         model = self.model_for(role or ("check" if judge else "read"))
+        budget = min(max_tokens or self.max_tokens, MAX_OUTPUT)
         cap = monthly_cap()
         if cap and month_spent() >= cap:          # hard stop, even mid-update
             raise BudgetExceeded(f"Monthly spending cap reached (${month_spent():.2f} of ${cap:.2f}). "
@@ -236,7 +248,7 @@ class ClaudeLLM:
         for mode in modes:
             for attempt in range(6):
                 try:
-                    resp = self._request(mode, model, system, user, name, schema)
+                    resp = self._request(mode, model, system, user, name, schema, budget)
                 except Exception as e:
                     kind = type(e).__name__
                     if kind == "BadRequestError" and _UNSUPPORTED.search(str(e)) and mode != MODES[-1] \
@@ -251,7 +263,14 @@ class ClaudeLLM:
                     continue
                 self._account(model, resp.usage)
                 try:
-                    out = self._extract(mode, resp, name, schema)
+                    out = self._extract(mode, resp, name, schema, budget)
+                except CutOff as e:
+                    if budget < MAX_OUTPUT:                     # give it more room once; never repeat the same request
+                        budget = min(budget * 2, MAX_OUTPUT)
+                        self.on_retry(f"  ! {name}: answer was longer than expected; retrying with room for {budget:,} tokens")
+                        last = e
+                        continue
+                    raise
                 except BadOutput as e:
                     if attempt < 1:                             # one fresh try for a garbled answer
                         last = e
@@ -282,6 +301,8 @@ def friendly_error(e: BaseException) -> tuple[str, str]:
         "APIConnectionError": "Couldn't reach Anthropic. Check your internet connection.",
         "APITimeoutError": "Anthropic took too long to respond. Retry.",
         "BadOutput": str(e),
+        "CutOff": f"{e} This is a tether bug, not your papers: please report it. Nothing after this step ran, "
+                  "and work already done is saved.",
         "BudgetExceeded": str(e),
     }.get(kind)
     if short is None and kind.endswith("Error") and msg:

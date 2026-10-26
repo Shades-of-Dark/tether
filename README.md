@@ -1,6 +1,6 @@
 # tether
 
-Turn a pile of research papers into the backbone of a literature review: **8–20 central ideas**, each woven from several papers and **tethered to verbatim quotes and page numbers**, linked in an Obsidian graph that shows where the papers **agree, disagree, or build on each other**.
+Turn a pile of research papers into the backbone of a literature review: **up to 20 central ideas**, each woven from at least two papers and **tethered to verbatim quotes and page numbers**, linked in an Obsidian graph that shows where the papers **agree, disagree, or build on each other**.
 
 ## Quick start (Windows)
 
@@ -10,8 +10,10 @@ Turn a pile of research papers into the backbone of a literature review: **8–2
    - **API key**: paste it into the app. It's saved to `.env` on your computer (git-ignored) and only ever shown back masked.
    - **Obsidian vault**: pick your existing vault, or let the app create one. See *Vaults* below.
    - **Obsidian**: download it if you don't have it.
-4. Create a project and add papers: drag in PDFs, import from Zotero, paste links, or search a topic. There's no build button: the graph updates itself whenever the project's papers or research question change.
+4. Create a project and add papers: drag in PDFs, import from Zotero, paste links, or search a topic and tick the results you want (a search adds nothing on its own). There's no build button: the graph updates itself whenever the project's papers or research question change.
 5. Click **Open in Obsidian** and start at `00 Overview`.
+
+The project page lists every paper as soon as it's added (title, authors, year, venue, where it came from, whether it's been read, how many key claims and ideas it feeds, and a ✓ when it's in your Zotero library), with search, sorting and filters such as *Needs attention* and *Not in Zotero*. Papers you add appear in a checklist that follows each one: fetched (or abstract only, or why it failed), read, in Zotero. While an update runs, the status card shows which paper it's on and what it's doing (reading section 3 of 8, picking the central claims, fact-checking, connecting papers into ideas, outlining, syncing).
 
 Changes made close together are batched into one update, and a change that arrives mid-update queues exactly one more. Updates are incremental: papers already read, and comparisons between papers already in the project, are reused, so adding a paper only costs that paper's reading plus its comparisons with the rest. An update with nothing new makes no calls to Claude. If an update fails, the app explains why in plain words (the raw error is under *Details*) and offers *Retry*; it never retries in a loop on its own.
 
@@ -37,9 +39,9 @@ In Settings → Zotero, choose how much access tether gets. You can change it an
 |---|---|
 | **Off** | Nothing. tether can't see your library. |
 | **Read** | List your collections and items, import the papers you pick (PDF + Zotero's citation), and use Zotero's citation for any PDF you drop in that's already in your library. It reads a *copy* of `zotero.sqlite`, so it never changes or locks your library. No key needed. |
-| **Read & write** | Plus only the boxes you tick: **add papers** (creates `Tether / <project>`, adds papers tether found that aren't in Zotero yet, files existing ones into it), **claim notes** (one note per paper with the verified claims; tether only updates notes it created), **upload PDFs** (off by default; uses your Zotero storage quota). Needs a [zotero.org API key](https://www.zotero.org/settings/keys/new) with library, write and notes access. |
+| **Read & write** | Plus only the boxes you tick: **add papers** (creates `Tether / <project>`, adds papers tether found that aren't in Zotero yet, with a link to their free PDF, and files existing ones into it), **claim notes** (one note per paper with the verified claims; tether only updates notes it created), **upload PDFs** (off by default; uses your Zotero storage quota). Needs a [zotero.org API key](https://www.zotero.org/settings/keys/new) with library, write and notes access. |
 
-tether never deletes anything in Zotero and never edits your items' details, notes or tags. Writes go through Zotero's official web API and reach the desktop app through normal Zotero sync. Sync runs after each update, and there's a *Sync to Zotero again* button.
+tether never edits your items' details, notes or tags, and never changes Zotero on its own. The **Zotero** card on the project page shows where Zotero and the project are out of step: papers still in the project's Zotero collection that you've removed from the project (with whether they were connected to the other papers when you removed them), and project papers not in Zotero yet. For the removed ones you choose: take them out of the collection (they stay in your library), move them to Zotero's trash (only items tether added; restorable from the trash), or keep them. Writes go through Zotero's official web API and reach the desktop app through normal Zotero sync. Sync runs after each update, and there's a *Sync to Zotero again* button.
 
 ## Models, cost and limits
 
@@ -95,14 +97,16 @@ pytest                                                       # offline tests, no
 
 ```
 <vault>/Tether/<project>/
-  00 Overview.md            the ideas at a glance, and which papers feed (or contradict) each one
-  Lit Review Outline.md     sections -> ideas -> compact citations, then open questions and gaps
-  Ideas/    I-03 Grasp location and stability.md
+  00 Overview.md            the ideas at a glance, which papers feed (or contradict) each one, where papers
+                            disagree, and papers that share no idea with the rest (off-topic, or a gap)
+  Lit Review Outline.md     sections -> ideas -> compact citations, single-source findings, open questions
+  Ideas/    I-03 Example idea title.md
                             the idea, its supporting / qualifying / contradicting evidence with
-                            verbatim quotes and "PDF p. N" links, and how it connects to other ideas
+                            verbatim quotes in quotation marks with APA in-text citations (Author et al., 2024, p. 6) and "PDF p. N" links, and how it connects to other ideas
   Papers/   P01 Smith et al., 2024.md     citation, the ~10 key claims, the ideas it feeds
   Sources/  *.pdf                         your PDFs (evidence links jump to the exact page)
   References.md, references.bib           bibliography (Zotero-importable)
+  (in Overview and paper notes)           Suggested reading: papers your sources cite for claims they only report
   Audit.md                                everything filtered out, and why
 ```
 
@@ -115,11 +119,12 @@ LLMs hallucinate when asked to *recall* or *write freely*. tether never lets the
 | Step | What the model does | What checks it |
 |---|---|---|
 | Read | proposes at most 4 central claims per section of the paper, each with a quote + page | **Code**, not AI: the quote must be found in the PDF's text (exact, or ≥90% fuzzy with *identical numbers and negations*). Not found → rejected. The quote shown is cut from the PDF itself. Related work, background and appendices are skipped. |
-| Attribution | flags claims the paper only cites from others | Secondhand claims are dropped, so "Smith et al. showed X" is never credited to the paper that mentioned Smith. |
+| Attribution | flags claims the paper only cites from others | Secondhand claims are never credited to the paper that mentioned them. Instead, tether matches the citation ("[12]", "Smith et al., 2019") to that paper's reference list, identifies the cited work (Crossref / OpenAlex, no AI), and lists it as suggested reading, ranked by how many of your papers cite it. You review those like search results before adding any. |
 | Select | picks each paper's ~10–12 most central claims | Can only return claims that passed the quote check; invented ids are ignored. |
 | Fact-check claims | none | A **separate** model call sees only the real source passage: supported / partial / unsupported. Partial → the missing condition is added. Unsupported or no verdict → rejected (fails closed). |
-| Synthesize ideas | weaves claims into 8–20 ideas, links them, outlines the review | Every idea must cite real, verified claims or it's **deleted**; links and outline entries pointing at nothing are dropped. |
-| Fact-check ideas | none | A separate call checks each idea's statement against its own evidence and quotes. Overreaching ideas are narrowed with a scope note; unsupported ones are removed (listed in Audit). |
+| Synthesize ideas | weaves claims into up to 20 ideas, links them, outlines the review | Every idea must cite real, verified claims or it's **deleted**. An idea backed by only one paper is **moved to Single-source findings** (it's that paper's result, not a thread in the literature). Links and outline entries pointing at nothing are dropped. |
+| Fact-check ideas | none | A separate call checks each idea's statement against its own evidence and quotes. Overreaching ideas get a **corrected statement** (the original is kept in the note and in Audit); unsupported ones are removed (listed in Audit). |
+| Disagreement | none | Shown only when a *different* paper contradicts what others support. A paper's own caveat is a qualification, not a disagreement. |
 | Citations | **never** | Author / year / venue / DOI come from Zotero or OpenAlex, matched by title. Unmatched → marked *unverified*. Same author + year → 2025a / 2025b. |
 
 What it can't guarantee: that the claims it picked are the ones *you* consider most important, or that a "contradicts" stance isn't comparing different conditions. Those are judgment calls, so the quote and the PDF page are always one click away. **Use the outline as a scaffold and write the review yourself.**
@@ -127,5 +132,6 @@ What it can't guarantee: that the claims it picked are the ones *you* consider m
 ## Notes
 
 - Scanned PDFs (no text layer) are skipped; OCR them first (e.g. `ocrmypdf`).
-- Paywalled papers from links or topic search fall back to the abstract and are tagged `abstract-only`.
+- Topic search (OpenAlex) shows title, authors, year, venue, citation count, abstract, and whether a free PDF exists. Nothing is downloaded, added, or sent to Zotero until you tick papers and click *Add*. Zotero only ever receives papers that are in the project, and only if you allowed *add papers*.
+- Paywalled papers from links or search fall back to the abstract and are tagged `abstract-only`.
 - Unchanged papers cost nothing on later updates. The status card shows each update's estimate beforehand and its real cost afterwards.

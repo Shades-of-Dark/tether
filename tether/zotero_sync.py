@@ -102,6 +102,49 @@ class ZoteroWeb:
             raise ZoteroWriteError("An item changed in Zotero while syncing. Run the sync again.")
         r.raise_for_status()
 
+    # ------------------------------------------------------------ tidying up
+    def collection_items(self, coll: str) -> list[dict]:
+        """Top-level items in a collection (not in the trash): key, title, year, tags, version."""
+        out, start = [], 0
+        while True:
+            r = self.client.get(f"{self.base}/collections/{coll}/items/top", params={"limit": 100, "start": start})
+            if r.status_code == 404:
+                return out
+            r.raise_for_status()
+            page = r.json()
+            for it in page:
+                d = it.get("data", {})
+                if d.get("deleted") or d.get("itemType") in ("note", "attachment"):
+                    continue
+                m = re.search(r"(1[5-9]|20)\d{2}", d.get("date") or "")
+                out.append({"key": it["key"], "title": d.get("title") or "(untitled)", "year": int(m.group(0)) if m else None,
+                            "tags": [t.get("tag") for t in d.get("tags", [])], "version": it.get("version")})
+            if len(page) < 100:
+                return out
+            start += 100
+
+    def note_text(self, key: str) -> Optional[str]:
+        it = self._get(f"/items/{key}")
+        return None if it is None else it["data"].get("note", "")
+
+    def uncollect(self, key: str, coll: str) -> bool:
+        """Take an item out of one collection. It stays in your library and any other collections."""
+        it = self._get(f"/items/{key}")
+        if it is None:
+            return False
+        cols = it["data"].get("collections", [])
+        if coll in cols:
+            self._patch(key, {"collections": [c for c in cols if c != coll]}, it["version"])
+        return True
+
+    def trash(self, key: str) -> bool:
+        """Move an item to Zotero's trash (you can restore it from there until you empty the trash)."""
+        it = self._get(f"/items/{key}")
+        if it is None:
+            return False
+        self._patch(key, {"deleted": 1}, it["version"])
+        return True
+
     # ------------------------------------------------------------ operations
     def collection(self, name: str, parent: Optional[str] = None) -> str:
         path = f"/collections/{parent}/collections" if parent else "/collections/top"
@@ -143,6 +186,12 @@ class ZoteroWeb:
         return self._create([{"itemType": "note", "parentItem": parent, "note": note_html,
                               "tags": [{"tag": "tether"}]}])[0]
 
+    def link_pdf(self, parent: str, url: str) -> str:
+        """A link to the free PDF online: one click opens it, and it uses none of your Zotero storage."""
+        return self._create([{"itemType": "attachment", "parentItem": parent, "linkMode": "linked_url",
+                              "title": "Free PDF (online)", "url": url, "contentType": "application/pdf",
+                              "tags": [{"tag": "tether"}]}])[0]
+
     def upload_pdf(self, parent: str, pdf: Path) -> str:
         data = pdf.read_bytes()
         att = self._create([{"itemType": "attachment", "parentItem": parent, "linkMode": "imported_file",
@@ -174,7 +223,7 @@ def claims_note(project: str, paper: dict, claims: list[dict], ideas: list[dict]
     for c in claims:
         qual = f" <i>({e(c['qualifiers'])})</i>" if c.get("qualifiers") else ""
         rows.append(f"<li><b>{e(c['kind'])}</b>: {e(c['text'])}{qual} <span>(p. {c['page']})</span>"
-                    f"<blockquote>{e(c['quote'])}</blockquote></li>")
+                    f"<blockquote>“{e(c['quote'].strip())}” (p. {c['page']})</blockquote></li>")
     ids = {c["id"] for c in claims}
     mine = [i for i in ideas if any(ev["claim"] in ids for ev in i["evidence"])]
     out = [f"<h2>tether: key claims</h2>",
@@ -231,13 +280,19 @@ def sync_project(web: ZoteroWeb, project_dir: Path, perms: set[str], local_lib=N
             state["items"][tkey] = key
             stats["created"] += 1
             log(f"  + added to Zotero: {cit['title'][:70]}")
+            uploaded = False
             if "pdfs" in perms and p.get("path") and Path(p["path"]).exists():
                 try:
                     web.upload_pdf(key, Path(p["path"]))
                     state["pdfs"][key] = True
                     stats["pdfs"] += 1
+                    uploaded = True
                 except ZoteroWriteError as e:
                     log(f"  ! {e}")
+            if not uploaded and cit.get("pdf_url"):
+                web.link_pdf(key, cit["pdf_url"])
+                state["pdfs"][key] = "link"
+                stats["pdf_links"] = stats.get("pdf_links", 0) + 1
             save()
         elif key and "papers" in perms:
             filed = web.add_to_collection(key, coll)

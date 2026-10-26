@@ -13,8 +13,9 @@ import hashlib
 import itertools
 import json
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Callable, Optional
 
 from .ingest import Chunk
 from .llm import LLM, dumps
@@ -89,16 +90,31 @@ EXTRACT_SCHEMA = {
 }
 
 
-def extract(llm: LLM, paper: Paper, chunks: list[Chunk], workers: int = 4) -> tuple[list[dict], list[Rejected]]:
+def _pages_label(chunk: Chunk) -> str:
+    return f"p. {chunk.pages[0]}" if len(set(chunk.pages)) == 1 else f"pp. {chunk.pages[0]}-{chunk.pages[-1]}"
+
+
+def extract(llm: LLM, paper: Paper, chunks: list[Chunk], workers: int = 4,
+            progress: Optional[Callable[[str], None]] = None) -> tuple[list[dict], list[Rejected]]:
+    say = progress or (lambda s: None)
+    done = [0]
+    lock = threading.Lock()
+
     def one(chunk: Chunk):
         user = (f"Paper: {paper.citation.title}\n"
                 f"{'(Only the abstract is available.)' if paper.source_kind == 'abstract-only' else ''}\n\n"
                 f"<paper_text>\n{chunk.text}\n</paper_text>")
         got = llm.call(system=EXTRACT_SYSTEM, user=user, name="claims", schema=EXTRACT_SCHEMA, role="read")["claims"]
+        with lock:
+            done[0] += 1
+            say(f"Reading: {done[0]} of {len(chunks)} sections done (just finished {_pages_label(chunk)})")
         return sorted(got, key=lambda c: -int(c.get("importance") or 1))[:MAX_PER_CHUNK]
 
+    say(f"Reading: {len(chunks)} section{'s' if len(chunks) != 1 else ''}, "
+        f"{min(workers, len(chunks))} at a time, pulling out claims with their quotes")
     with ThreadPoolExecutor(workers) as ex:
         raw = list(itertools.chain.from_iterable(ex.map(one, chunks)))
+    say(f"Checking {len(raw)} quotes against the PDF text")
 
     kept, rejected, seen = [], [], set()
     for c in raw:
@@ -136,10 +152,13 @@ SELECT_SCHEMA = {
 }
 
 
-def select(llm: LLM, paper: Paper, candidates: list[dict], cache: Optional[dict] = None) -> tuple[list[dict], list[dict]]:
+def select(llm: LLM, paper: Paper, candidates: list[dict], cache: Optional[dict] = None,
+           progress: Optional[Callable[[str], None]] = None) -> tuple[list[dict], list[dict]]:
     """Returns (kept, dropped). Small lists skip the call entirely."""
     if len(candidates) <= MAX_PER_PAPER // 2:
         return list(candidates), []
+    if progress:
+        progress(f"Picking the most central of {len(candidates)} verified claims")
     opening = " ".join(p.text for p in paper.pages[:1])[:2500]
     items = [{"id": f"k{i}", "kind": c["kind"], "claim": c["text"], "importance": c.get("importance", 2)}
              for i, c in enumerate(candidates)]
@@ -219,10 +238,13 @@ ENTAIL_SCHEMA = {
 }
 
 
-def entail(llm: LLM, paper: Paper, candidates: list[dict], batch: int = 12) -> tuple[list[dict], list[Rejected]]:
+def entail(llm: LLM, paper: Paper, candidates: list[dict], batch: int = 12,
+           progress: Optional[Callable[[str], None]] = None) -> tuple[list[dict], list[Rejected]]:
     kept, rejected = [], []
     for start in range(0, len(candidates), batch):
         group = candidates[start:start + batch]
+        if progress:
+            progress(f"Fact-checking {len(candidates)} claim{'s' if len(candidates) != 1 else ''} against their pages")
         items = [{"index": i, "claim": c["text"],
                   "source": context_around(c["quote"], paper.pages, c["page"], 400)}
                  for i, c in enumerate(group)]
@@ -244,51 +266,75 @@ def entail(llm: LLM, paper: Paper, candidates: list[dict], batch: int = 12) -> t
 
 
 # ---------------------------------------------------------------- 4. synthesize
-SYNTH_SYSTEM = """You write the backbone of a literature review: the central IDEAS that run across a
+# Two calls, so the size of each answer stays bounded however many papers there are:
+#   ideas    8-20 ideas, each citing at most MAX_EVIDENCE claim ids (compact: ids only)
+#   outline  sections + gaps, built from the short list of ideas (not from all claims)
+MAX_IDEAS = 20
+MAX_EVIDENCE = 8
+MIN_PAPERS = 2         # an idea is a point several papers make; one paper's result stays a single-source finding
+SYNTH_VERSION = "4"    # part of the cache key for ideas, idea checks and outline: bump when those prompts change
+
+SYNTH_SYSTEM = f"""You write the backbone of a literature review: the central IDEAS that run across a
 set of papers, built only from verified claims. Each claim below was quoted verbatim from its paper and
 fact-checked; you see the claim text and its qualifiers.
 
-Produce 8-20 ideas (fewer if the papers are few or narrow). An idea is a point a reviewer would make,
-e.g. "Late caffeine delays sleep onset, but the effect shrinks or vanishes in habitual users" — not a
-topic label like "Caffeine and sleep".
-- Prefer ideas supported by claims from two or more papers. A single-paper idea is fine only if
-  it's a central contribution nobody else addresses (say so in the statement).
+Produce up to {MAX_IDEAS} ideas (fewer if the papers are few or narrow). An idea is a point a reviewer would
+make, e.g. "Late caffeine delays sleep onset, but the effect shrinks or vanishes in habitual users" — not
+a topic label like "Caffeine and sleep".
+- Every idea must cite claims from AT LEAST TWO DIFFERENT PAPERS (see each claim's `paper`). That is what
+  makes it an idea that runs across the literature rather than one paper's result. Look hard for the
+  common threads: the same problem, method, trade-off or limitation reported by different groups.
+  A result only one paper reports is not an idea: leave it out (it stays on that paper's note) unless it
+  contradicts or qualifies an idea that other papers support.
+- Don't merge unrelated claims just to reach two papers: two papers must really speak to the same point.
 - `statement`: 1-2 sentences saying exactly what the evidence shows, keeping its conditions. Never
   add facts, numbers, causes, or generalizations the claims don't contain. If papers disagree, say so.
-- `evidence`: the claim ids the idea rests on, each with a stance: supports, qualifies (narrows it or
-  adds a condition), or contradicts (cuts against it). Every idea needs at least one supporting claim.
-  A claim may appear in at most two ideas. Not every claim has to be used.
-- `links`: how ideas relate: builds_on (one depends on or extends the other), in_tension (they pull
-  in different directions), related (same mechanism or setting). Only link ideas that truly connect.
-- `outline`: group the ideas into 3-6 sections in the order a review would present them, each with
-  a one-sentence `note` on why these ideas belong together.
-- `gaps`: 2-6 open questions the evidence exposes (a contradiction, a condition nobody tested, a
-  single-paper result nobody replicated). Each cites the claim ids that reveal it.
-Use only claim ids from the list. Keep titles under 9 words."""
+- Evidence, as claim ids: `supports`, `qualifies` (narrows it or adds a condition), `contradicts` (cuts
+  against it). At least one supporting claim; at most {MAX_EVIDENCE} claims per idea in total, choosing the
+  strongest and favouring different papers. A claim may appear in at most two ideas. Not every claim
+  has to be used.
+- `contradicts` / in_tension mean the PAPERS disagree. One paper's own caveat is `qualifies`, not `contradicts`.
+- `links`: how ideas relate, by key: builds_on, in_tension, or related. Only real connections,
+  at most 3 per idea, `why` under 15 words.
+- Keep titles under 9 words. Be concise: no commentary outside the fields.
+Use only claim ids from the list."""
 
 SYNTH_SCHEMA = {
     "type": "object",
+    "properties": {"ideas": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+            "key": {"type": "string"},
+            "title": {"type": "string"},
+            "statement": {"type": "string"},
+            "supports": {"type": "array", "items": {"type": "string"}},
+            "qualifies": {"type": "array", "items": {"type": "string"}},
+            "contradicts": {"type": "array", "items": {"type": "string"}},
+            "links": {"type": "array", "items": {
+                "type": "object",
+                "properties": {"to": {"type": "string"},
+                               "kind": {"type": "string", "enum": ["builds_on", "in_tension", "related"]},
+                               "why": {"type": "string"}},
+                "required": ["to", "kind", "why"]}},
+        },
+        "required": ["key", "title", "statement", "supports", "qualifies", "contradicts", "links"]}}},
+    "required": ["ideas"],
+}
+
+OUTLINE_SYSTEM = """You arrange the central ideas of a literature review into an outline, and name the
+open questions. You see each idea (id, title, statement, how many papers back it, whether any evidence
+contradicts or qualifies it) and the short text of the claims involved.
+
+- `sections`: 3-6 sections in the order a review would present them, each listing idea ids and a
+  one-sentence `note` on why these ideas belong together. Every idea goes in exactly one section.
+- `gaps`: 2-6 open questions the evidence exposes: a contradiction, a condition nobody tested, a
+  single-paper result nobody replicated (see `single_source`). Each cites the claim ids that reveal it.
+Use only ids from the input. Be concise."""
+
+OUTLINE_SCHEMA = {
+    "type": "object",
     "properties": {
-        "ideas": {"type": "array", "items": {
-            "type": "object",
-            "properties": {
-                "key": {"type": "string"},
-                "title": {"type": "string"},
-                "statement": {"type": "string"},
-                "evidence": {"type": "array", "items": {
-                    "type": "object",
-                    "properties": {"claim": {"type": "string"},
-                                   "stance": {"type": "string", "enum": ["supports", "qualifies", "contradicts"]}},
-                    "required": ["claim", "stance"]}},
-                "links": {"type": "array", "items": {
-                    "type": "object",
-                    "properties": {"to": {"type": "string"},
-                                   "kind": {"type": "string", "enum": ["builds_on", "in_tension", "related"]},
-                                   "why": {"type": "string"}},
-                    "required": ["to", "kind", "why"]}},
-            },
-            "required": ["key", "title", "statement", "evidence", "links"]}},
-        "outline": {"type": "array", "items": {
+        "sections": {"type": "array", "items": {
             "type": "object",
             "properties": {"title": {"type": "string"}, "note": {"type": "string"},
                            "ideas": {"type": "array", "items": {"type": "string"}}},
@@ -298,26 +344,25 @@ SYNTH_SCHEMA = {
             "properties": {"text": {"type": "string"}, "claims": {"type": "array", "items": {"type": "string"}}},
             "required": ["text", "claims"]}},
     },
-    "required": ["ideas", "outline", "gaps"],
+    "required": ["sections", "gaps"],
 }
 
 
 def synthesize(llm: LLM, claims: list[Claim], papers: dict[str, Paper], question: str = "",
-               cache: Optional[dict] = None) -> tuple[list[Idea], dict, int]:
-    """Returns (ideas, outline, dropped) where outline = {"sections": [...], "gaps": [...]} and
-    dropped counts ideas/sections/gaps removed for citing nothing real."""
+               cache: Optional[dict] = None) -> tuple[list[Idea], int]:
+    """Returns (ideas, dropped): dropped counts ideas removed for citing nothing real."""
     payload = {
         "research_question": question or "(none given: organize around the main threads)",
-        "papers": [{"id": p.id, "cite": p.citation.short(), "title": p.citation.title} for p in papers.values()],
-        "claims": [{"id": c.id, "paper": c.paper_id, "kind": c.kind, "claim": c.text, "qualifiers": c.qualifiers}
-                   for c in claims],
+        "papers": [{"id": p.id, "cite": p.citation.short()} for p in papers.values()],
+        "claims": [{"id": c.id, "paper": c.paper_id, "kind": c.kind, "claim": c.text,
+                    **({"qualifiers": c.qualifiers} if c.qualifiers else {})} for c in claims],
     }
-    ck = _h(payload)
+    ck = _h(SYNTH_VERSION, payload)
     if cache is not None and ck in cache:
         out = cache[ck]
     else:
         out = llm.call(system=SYNTH_SYSTEM, user=dumps(payload), name="synthesis", schema=SYNTH_SCHEMA,
-                       role="synthesize")
+                       role="synthesize", max_tokens=12000)
         if cache is not None:
             cache[ck] = out
 
@@ -326,36 +371,70 @@ def synthesize(llm: LLM, claims: list[Claim], papers: dict[str, Paper], question
     ideas: list[Idea] = []
     key_to_id: dict[str, str] = {}
     uses: dict[str, int] = {}
-    for raw in out.get("ideas", [])[:20]:
-        ev = []
-        for e in raw.get("evidence", []):
-            cid = str(e.get("claim", "")).strip()
-            if cid in valid and uses.get(cid, 0) < 2 and cid not in {x.claim for x in ev}:
-                ev.append(Evidence(cid, e.get("stance") if e.get("stance") in ("supports", "qualifies", "contradicts") else "supports"))
-                uses[cid] = uses.get(cid, 0) + 1
-        if not any(x.stance == "supports" for x in ev) or not raw.get("statement", "").strip():
+    for raw in out.get("ideas", [])[:MAX_IDEAS]:
+        ev: list[Evidence] = []
+        for stance in ("supports", "qualifies", "contradicts"):
+            for cid in raw.get(stance) or []:
+                cid = str(cid).strip()
+                if (cid in valid and uses.get(cid, 0) < 2 and cid not in {x.claim for x in ev}
+                        and len(ev) < MAX_EVIDENCE):
+                    ev.append(Evidence(cid, stance))
+                    uses[cid] = uses.get(cid, 0) + 1
+        if not any(x.stance == "supports" for x in ev) or not str(raw.get("statement", "")).strip():
             dropped += 1                              # cites nothing real: an idea we can't stand behind
             continue
         iid = f"I-{len(ideas) + 1:02d}"
         key_to_id[str(raw.get("key", iid))] = iid
-        ideas.append(Idea(iid, raw.get("title", "").strip()[:90] or raw["statement"][:60], raw["statement"].strip(), ev))
+        title = str(raw.get("title", "")).strip()[:90] or raw["statement"][:60]
+        ideas.append(Idea(iid, title, raw["statement"].strip(), ev))
     by_id = {i.id: i for i in ideas}
-    for raw in out.get("ideas", [])[:20]:
+    for raw in out.get("ideas", [])[:MAX_IDEAS]:
         src = key_to_id.get(str(raw.get("key")))
         if not src:
             continue
-        for l in raw.get("links", []):
+        for l in (raw.get("links") or [])[:3]:
             dst = key_to_id.get(str(l.get("to")))
             if dst and dst != src and l.get("kind") in ("builds_on", "in_tension", "related"):
                 by_id[src].links.append(IdeaLink(dst, l["kind"], l.get("why", "")))
+    return ideas, dropped
 
-    sections = []
-    placed = set()
-    for s in out.get("outline", []):
-        ids = [key_to_id[k] for k in s.get("ideas", []) if k in key_to_id and key_to_id[k] not in placed]
+
+def outline(llm: LLM, ideas: list[Idea], claims: dict[str, Claim], question: str = "",
+            cache: Optional[dict] = None, single: Optional[list[Idea]] = None) -> tuple[dict, int]:
+    """Returns ({"sections": [...], "gaps": [...]}, dropped). `single` = single-source findings,
+    which can't be sections but can reveal gaps (a result nobody replicated)."""
+    single = single or []
+    if not ideas and not single:
+        return {"sections": [], "gaps": []}, 0
+    payload = {
+        "research_question": question or "(none given)",
+        "ideas": [{"id": i.id, "title": i.title, "statement": i.statement,
+                   "papers": len({claims[e.claim].paper_id for e in i.evidence}),
+                   "has_contradiction": any(e.stance == "contradicts" for e in i.evidence),
+                   "has_qualification": any(e.stance == "qualifies" for e in i.evidence),
+                   "claims": [{"id": e.claim, "stance": e.stance, "claim": claims[e.claim].text} for e in i.evidence]}
+                  for i in ideas],
+        "single_source": [{"paper": claims[i.evidence[0].claim].paper_id, "title": i.title,
+                           "claims": [{"id": e.claim, "claim": claims[e.claim].text} for e in i.evidence]}
+                          for i in single],
+    }
+    ck = _h(SYNTH_VERSION, payload)
+    if cache is not None and ck in cache:
+        out = cache[ck]
+    else:
+        out = llm.call(system=OUTLINE_SYSTEM, user=dumps(payload), name="outline", schema=OUTLINE_SCHEMA,
+                       role="synthesize", max_tokens=6000)
+        if cache is not None:
+            cache[ck] = out
+    valid_ideas = {i.id for i in ideas}
+    used_claims = {e.claim for i in ideas + single for e in i.evidence}
+    dropped = 0
+    sections, placed = [], set()
+    for sec in out.get("sections", []):
+        ids = [x for x in sec.get("ideas", []) if x in valid_ideas and x not in placed]
         if ids:
             placed |= set(ids)
-            sections.append({"title": s.get("title", "Section"), "note": s.get("note", ""), "ideas": ids})
+            sections.append({"title": sec.get("title", "Section"), "note": sec.get("note", ""), "ideas": ids})
         else:
             dropped += 1
     rest = [i.id for i in ideas if i.id not in placed]
@@ -363,12 +442,12 @@ def synthesize(llm: LLM, claims: list[Claim], papers: dict[str, Paper], question
         sections.append({"title": "Other threads", "note": "", "ideas": rest})
     gaps = []
     for g in out.get("gaps", []):
-        cids = [c for c in g.get("claims", []) if c in valid]
-        if cids and g.get("text", "").strip():
+        cids = [c for c in g.get("claims", []) if c in used_claims]
+        if cids and str(g.get("text", "")).strip():
             gaps.append({"text": g["text"].strip(), "claims": list(dict.fromkeys(cids))})
         else:
             dropped += 1
-    return ideas, {"sections": sections, "gaps": gaps}, dropped
+    return {"sections": sections, "gaps": gaps}, dropped
 
 
 # ---------------------------------------------------------------- 5. check ideas
@@ -378,11 +457,14 @@ it was assigned. Use only this evidence, no outside knowledge.
 
 - supported: every part of the statement is backed by the supporting evidence, at the same strength
   and scope, and any contradicting evidence is acknowledged in the statement.
-- partial: a narrower version holds. Put the missing condition in `scope` (e.g. "shown only in
-  simulation", "only one of three papers found this", "the papers disagree on the size of the effect").
+- partial: a narrower version holds. Put what was wrong or missing in `scope` (e.g. "shown only in
+  simulation", "only one of three papers found this", "the papers disagree on the size of the effect"),
+  and write `revised_statement`: the statement rewritten so it is fully supported (same length or
+  shorter, keeping every condition, adding nothing the evidence doesn't say).
 - unsupported: the statement asserts something the evidence doesn't show (a new number, a cause,
   a generalization, a consensus that isn't there), or misstates what a paper found.
 
+For supported or unsupported items, `revised_statement` is "".
 Return one verdict per item, using each item's index. Never skip an item."""
 
 IDEA_CHECK_SCHEMA = {
@@ -391,8 +473,9 @@ IDEA_CHECK_SCHEMA = {
         "type": "object",
         "properties": {"index": {"type": "integer"},
                        "verdict": {"type": "string", "enum": ["supported", "partial", "unsupported"]},
-                       "scope": {"type": "string"}, "reason": {"type": "string"}},
-        "required": ["index", "verdict", "scope", "reason"]}}},
+                       "scope": {"type": "string"}, "reason": {"type": "string"},
+                       "revised_statement": {"type": "string"}},
+        "required": ["index", "verdict", "scope", "reason", "revised_statement"]}}},
     "required": ["verdicts"],
 }
 
@@ -407,7 +490,7 @@ def check_ideas(llm: LLM, ideas: list[Idea], claims: dict[str, Claim], papers: d
                             "claim": claims[e.claim].text, "quote": claims[e.claim].quote,
                             "qualifiers": claims[e.claim].qualifiers} for e in idea.evidence]}
              for i, idea in enumerate(ideas)]
-    ck = _h(items)
+    ck = _h(SYNTH_VERSION, items)
     if cache is not None and ck in cache:
         out = cache[ck]
     else:
@@ -425,6 +508,9 @@ def check_ideas(llm: LLM, ideas: list[Idea], claims: dict[str, Claim], papers: d
             continue
         if v["verdict"] == "partial":
             idea.check, idea.scope = "partial", v.get("scope", "").strip()
+            revised = str(v.get("revised_statement") or "").strip()
+            if revised and revised != idea.statement:      # the headline itself must be the corrected one
+                idea.narrowed_from, idea.statement = idea.statement, revised
         kept.append(idea)
     # renumber so ids stay compact, and drop links to removed ideas
     remap = {idea.id: f"I-{n + 1:02d}" for n, idea in enumerate(kept)}
@@ -433,3 +519,46 @@ def check_ideas(llm: LLM, ideas: list[Idea], claims: dict[str, Claim], papers: d
     for idea in kept:
         idea.id = remap[idea.id]
     return kept, rejected, remap
+
+
+# ---------------------------------------------------------------- breadth and disagreement
+def papers_of(idea: Idea, claims: dict[str, Claim]) -> list[str]:
+    return list(dict.fromkeys(claims[e.claim].paper_id for e in idea.evidence))
+
+
+def split_single_source(ideas: list[Idea], claims: dict[str, Claim],
+                        min_papers: int = MIN_PAPERS) -> tuple[list[Idea], list[Idea]]:
+    """(shared ideas, single-source findings). The model is told to make only cross-paper ideas; this is
+    the check it can't skip. Links to ideas that are moved out are dropped."""
+    shared = [i for i in ideas if len(papers_of(i, claims)) >= min_papers]
+    single = [i for i in ideas if len(papers_of(i, claims)) < min_papers]
+    keep = {i.id for i in shared}
+    for i in shared:
+        i.links = [l for l in i.links if l.to in keep]
+    for i in single:
+        i.links = []
+    return shared, single
+
+
+def disagreeing_papers(idea: Idea, claims: dict[str, Claim]) -> list[str]:
+    """Papers whose evidence contradicts an idea that OTHER papers support. A paper qualifying its own
+    result is a caveat, not a disagreement between papers."""
+    backers = {claims[e.claim].paper_id for e in idea.evidence if e.stance == "supports"}
+    against = [claims[e.claim].paper_id for e in idea.evidence if e.stance == "contradicts"]
+    return list(dict.fromkeys(p for p in against if p not in backers))
+
+
+def tensions(ideas: list[Idea], claims: dict[str, Claim]) -> list[tuple[Idea, Idea, str]]:
+    """in_tension links between ideas drawn from different papers (each pair once)."""
+    by_id = {i.id: i for i in ideas}
+    seen, out = set(), []
+    for i in ideas:
+        for l in i.links:
+            j = by_id.get(l.to)
+            if l.kind != "in_tension" or j is None or frozenset((i.id, j.id)) in seen:
+                continue
+            if set(papers_of(i, claims)) == set(papers_of(j, claims)):
+                continue                          # the same papers on both sides: not papers disagreeing
+            seen.add(frozenset((i.id, j.id)))
+            out.append((i, j, l.why))
+    return out

@@ -21,7 +21,7 @@ class FakeLLM:
     def model_for(self, role):
         return "fake"
 
-    def call(self, *, system, user, name, schema, judge=False, role=None):
+    def call(self, *, system, user, name, schema, judge=False, role=None, max_tokens=None):
         self.calls.append(name)
         self.roles.append((name, role or ("check" if judge else "read")))
         self.payloads.setdefault(name, []).append(user)
@@ -39,11 +39,11 @@ class FakeLLM:
                 clean = sent.replace("{", "").replace("}", "")
                 out.append({"text": clean, "kind": "finding", "quote": sent, "page": int(num),
                             "qualifiers": "", "importance": 3, "secondhand": False})
-        out.append({"text": "Drones can carry unlimited payloads.", "kind": "finding",
-                    "quote": "quadrotors can lift arbitrarily heavy payloads without any loss of stability",
+        out.append({"text": "The line can carry any load.", "kind": "finding",
+                    "quote": "the widget line can carry arbitrarily heavy loads without any loss of throughput",
                     "page": 1, "qualifiers": "", "importance": 3, "secondhand": False})
-        out.append({"text": "Prior work used PID.", "kind": "finding",
-                    "quote": "Earlier studies by Smith et al. relied on cascaded PID control loops for hover",
+        out.append({"text": "Prior work used fixed schedules.", "kind": "finding",
+                    "quote": "Earlier studies by Smith et al. relied on one fixed schedule for every shift",
                     "page": 1, "qualifiers": "", "importance": 1, "secondhand": True})
         return {"claims": out}
 
@@ -64,36 +64,45 @@ class FakeLLM:
                 res.append({"index": it["index"], "verdict": "supported", "missing_qualifier": "", "reason": "ok"})
         return {"verdicts": res}
 
-    # synthesize: one idea per keyword, a contradicting stance, and three things that must be dropped
+    # synthesize: one idea per keyword, a contradicting stance, and two ideas that must not survive
     def _synthesis(self, user):
         claims = json.loads(user)["claims"]
-        groups = {"kalman": [], "policy": [], "other": []}
+        groups = {"filter": [], "scheduler": [], "other": []}
         for c in claims:
             t = c["claim"].lower()
-            groups["kalman" if "kalman" in t else "policy" if ("policy" in t or "payload" in t) else "other"].append(c)
+            groups["filter" if "beta filter" in t else "scheduler" if ("schedul" in t or "weight" in t) else "other"].append(c)
         ideas = []
-        if groups["kalman"]:
-            ideas.append({"key": "A", "title": "Kalman filtering of payload mass",
-                          "statement": "A Kalman filter can estimate payload mass, though it converges slowly for off-center loads.",
-                          "evidence": [{"claim": c["id"], "stance": "supports"} for c in groups["kalman"]],
-                          "links": [{"to": "B", "kind": "builds_on", "why": "the estimate feeds the policy"},
+        if groups["filter"]:
+            ideas.append({"key": "A", "title": "Beta filtering of widget weight",
+                          "statement": "A beta filter can estimate widget weight, though it converges slowly for off-center loads.",
+                          "supports": [c["id"] for c in groups["filter"]], "qualifies": [], "contradicts": [],
+                          "links": [{"to": "B", "kind": "builds_on", "why": "the estimate feeds the scheduler"},
                                     {"to": "Z", "kind": "related", "why": "link to an idea that doesn't exist"}]})
-        if groups["policy"]:
-            ev = [{"claim": c["id"], "stance": "contradicts" if "degrades" in c["claim"] else "supports"}
-                  for c in groups["policy"]]
-            if not any(e["stance"] == "supports" for e in ev):
-                ev[0]["stance"] = "supports"
-            ideas.append({"key": "B", "title": "Payload-aware policies",
-                          "statement": "Conditioning the policy on payload helps in simulation, but a wrong estimate hurts.",
-                          "evidence": ev, "links": []})
+        if groups["scheduler"]:
+            sup = [c["id"] for c in groups["scheduler"] if "degrades" not in c["claim"]]
+            con = [c["id"] for c in groups["scheduler"] if "degrades" in c["claim"]]
+            if not sup:
+                sup, con = con[:1], con[1:]
+            ideas.append({"key": "B", "title": "Weight-aware scheduling",
+                          "statement": "Conditioning the scheduler on weight helps in simulation, but a wrong estimate hurts.",
+                          "supports": sup, "qualifies": [], "contradicts": con, "links": []})
         ideas.append({"key": "C", "title": "Fabricated idea", "statement": "Everything works perfectly.",
-                      "evidence": [{"claim": "C-9999", "stance": "supports"}], "links": []})
-        ideas.append({"key": "D", "title": "Overreaching idea", "statement": "Drones always succeed at every grasp.",
-                      "evidence": [{"claim": claims[0]["id"], "stance": "supports"}], "links": []})
-        return {"ideas": ideas,
-                "outline": [{"title": "Estimation and control", "note": "how the pieces fit", "ideas": ["A", "B", "D"]},
-                            {"title": "Ghost section", "note": "", "ideas": ["Q"]}],
-                "gaps": [{"text": "Nobody tested off-center payloads on hardware.", "claims": [claims[-1]["id"]]},
+                      "supports": ["C-9999"], "qualifies": [], "contradicts": [], "links": []})
+        ideas.append({"key": "D", "title": "Overreaching idea", "statement": "The line always succeeds on every widget.",
+                      "supports": [claims[0]["id"], claims[-1]["id"]], "qualifies": [], "contradicts": [], "links": []})
+        ideas.append({"key": "E", "title": "Single-paper result", "statement": "One paper reports this on its own.",
+                      "supports": [claims[min(1, len(claims) - 1)]["id"]], "qualifies": [], "contradicts": [],
+                      "links": [{"to": "A", "kind": "related", "why": "a link that must be dropped"}]})
+        return {"ideas": ideas}
+
+    # outline: a real section, a section of ghost ideas, a real gap and a gap citing nothing
+    def _outline(self, user):
+        ideas = json.loads(user)["ideas"]
+        some_claim = ideas[-1]["claims"][-1]["id"] if ideas else "C-0000"
+        return {"sections": [{"title": "Estimation and scheduling", "note": "how the pieces fit",
+                              "ideas": [i["id"] for i in ideas]},
+                             {"title": "Ghost section", "note": "", "ideas": ["I-99"]}],
+                "gaps": [{"text": "Nobody tested off-center widgets on a real line.", "claims": [some_claim]},
                          {"text": "A gap citing nothing real.", "claims": ["C-9999"]}]}
 
     def _idea_checks(self, user):
@@ -101,11 +110,14 @@ class FakeLLM:
         out = []
         for it in items:
             if "always" in it["statement"]:
-                out.append({"index": it["index"], "verdict": "unsupported", "scope": "", "reason": "not in the evidence"})
+                out.append({"index": it["index"], "verdict": "unsupported", "scope": "", "reason": "not in the evidence",
+                            "revised_statement": ""})
             elif "simulation" in it["statement"]:
-                out.append({"index": it["index"], "verdict": "partial", "scope": "only shown in simulation", "reason": "scope"})
+                out.append({"index": it["index"], "verdict": "partial", "scope": "only shown in simulation", "reason": "scope",
+                            "revised_statement": "Weight-aware scheduling helped only in simulation; a wrong estimate hurt."})
             else:
-                out.append({"index": it["index"], "verdict": "supported", "scope": "", "reason": "ok"})
+                out.append({"index": it["index"], "verdict": "supported", "scope": "", "reason": "ok",
+                            "revised_statement": ""})
         return {"verdicts": out}
 
 

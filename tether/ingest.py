@@ -134,3 +134,14 @@ def chunk_pages(paper_id: str, pages: list[Page], max_chars: int = 9000, overlap
     if buf.strip():
         chunks.append(Chunk(paper_id, nums, buf))
     return chunks
+
+
+def quick_citation(path: Path) -> Citation:
+    """Title / authors / year from a PDF's metadata and first page only (fast; no full read)."""
+    try:
+        doc = pymupdf.open(path)
+        info = {"meta": doc.metadata or {}, "first_page": doc[0].get_text("dict") if len(doc) else {"blocks": []}}
+        doc.close()
+        return citation_from_pdf(info, path)
+    except Exception:
+        return Citation(title=Path(path).stem)

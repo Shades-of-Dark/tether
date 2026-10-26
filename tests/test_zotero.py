@@ -206,3 +206,108 @@ def test_item_not_yet_on_zotero_org_is_reported_not_guessed(tmp_path, zlib):
     stats = sync_project(ZoteroWeb("zkey-good", web.transport()), proj, {"papers", "notes"}, lib, lines.append)
     assert stats["created"] == 0 and stats["notes"] == 0   # no duplicate created, no orphan note
     assert any("isn't on zotero.org yet" in l for l in lines)
+
+
+def test_pasted_link_lands_in_zotero_with_its_free_pdf(tmp_path, monkeypatch):
+    """A pasted link is downloaded (the downloads folder is created on first use), named readably,
+    read, and when 'add papers' is allowed it reaches Zotero with a link to the free PDF."""
+    import httpx, json
+    import tether.sources as src
+    from tether.pipeline import fetch_remote
+    from tether.zotero_sync import ZoteroWeb, sync_project
+    from tests.fake import make_pdf
+
+    pdf_bytes = make_pdf(tmp_path / "src.pdf", "Robust Throughput Under Unknown Loads", [[
+        "Filler text about widget lines. " * 30,
+        "FINDING: The {beta filter} keeps throughput steady when widget weight is unknown.",
+        "Filler text about widget lines. " * 30]]).read_bytes()
+    work = {"id": "https://openalex.org/W77", "title": "Robust Throughput Under Unknown Loads", "publication_year": 2024,
+            "authorships": [{"author": {"display_name": "Grace Hopper"}}], "doi": "https://doi.org/10.1234/widgets",
+            "primary_location": {"source": {"display_name": "Journal of Widgets"}, "landing_page_url": "https://example.org/w"},
+            "best_oa_location": {"pdf_url": "https://publisher.example/blocked.pdf"},
+            "locations": [{"pdf_url": "https://repository.example/copy.pdf"}]}
+
+    def handler(req: httpx.Request):
+        if req.url.host == "api.openalex.org":
+            return httpx.Response(200, json=work)
+        if req.url.host == "publisher.example":                       # publishers often refuse scripts
+            return httpx.Response(403, text="forbidden")
+        if req.url.host == "broken.example":
+            return httpx.Response(404, text="gone")
+        return httpx.Response(200, content=pdf_bytes)
+    monkeypatch.setattr(src, "_client", lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+
+    proj = tmp_path / "P"                                           # note: no .tether/downloads yet
+    lines = []
+    from tether.pipeline import Reporter
+    got = fetch_remote(proj, ["doi.org/10.1234/widgets", "https://broken.example/x"], [], Reporter(lines.append))
+    assert got == {"pdf": 1, "abstract": 0}
+    assert [p.name for p in (proj / "Sources").glob("*.pdf")] == ["Hopper - 2024 - Robust Throughput Under Unknown Loads.pdf"]
+    known = json.loads((proj / ".tether" / "known_citations.json").read_text())
+    assert next(iter(known.values()))["pdf_url"] == "https://repository.example/copy.pdf"   # the copy that worked
+    assert any("broken.example" in l and "Skipped" in l for l in lines)                   # bad link reported, not fatal
+
+    run(FakeLLM(), out=proj, lookup=False)
+    web = FakeZoteroWeb()
+    stats = sync_project(ZoteroWeb("zkey-good", web.transport()), proj, {"papers"}, None, lines.append)
+    assert stats["created"] == 1 and stats["pdf_links"] == 1 and stats["pdfs"] == 0
+    att = [i for i in web.items.values() if i["data"].get("itemType") == "attachment"]
+    assert len(att) == 1 and att[0]["data"]["linkMode"] == "linked_url"
+    assert att[0]["data"]["url"] == "https://repository.example/copy.pdf"
+
+
+def test_zotero_check_finds_removed_papers_and_tidies_them(tmp_path, monkeypatch, zlib):
+    """After papers are removed from a project, the Zotero check lists the ones still in the project's
+    Zotero collection, says how connected each was, and can take them out or trash them, but only
+    trashes items tether itself added."""
+    web = FakeZoteroWeb(existing={
+        "AAAA1111": {"itemType": "journalArticle", "title": "Placement and Line Stability", "collections": ["MINE"]},
+        "BBBB2222": {"itemType": "journalArticle", "title": "Contact Models for Widget Handling", "collections": []}})
+    c = _client(tmp_path, monkeypatch, web)
+    c.post("/api/zotero/connect", json={"dir": str(zlib)})
+    c.post("/api/zotero/write", json={"perms": ["papers", "notes"], "api_key": "zkey-good"})
+    c.post("/api/projects", json={"name": "Widgets"})
+    c.post("/api/projects/Widgets/zotero-import", json={"keys": ["AAAA1111"]})
+    a = _pdf(tmp_path, "a.pdf", "Robust Throughput Under Unknown Loads",
+             "A {weight estimator} lets the scheduler recover throughput within one second.")
+    b = _pdf(tmp_path, "b.pdf", "Sorting Widgets by Color on Fast Belts",
+             "Sorting by {color} doubles the throughput of the sorting station.")
+    with open(a, "rb") as fa, open(b, "rb") as fb:
+        c.post("/api/projects/Widgets/upload", files=[("files", ("a.pdf", fa, "application/pdf")), ("files", ("b.pdf", fb, "application/pdf"))])
+    j = _build(c, "Widgets")
+    assert j["stats"]["zotero"]["created"] == 2, j["log"]
+    st = c.get("/api/projects/Widgets/zotero-check").json()
+    assert st["connected"] and st["can_write"] and st["removed"] == [] and st["missing"] == []
+
+    proj = tmp_path / "Vault" / "Tether" / "Widgets"
+    coll = json.loads((proj / ".tether" / "zotero_sync.json").read_text())["collection"]
+    # someone also drops a paper into the project's collection by hand in Zotero
+    web.items["MANUAL01"] = {"key": "MANUAL01", "version": 1, "data": {"key": "MANUAL01", "itemType": "journalArticle",
+                             "title": "A Paper I Filed Myself", "collections": [coll], "tags": []}}
+    c.delete("/api/projects/Widgets/sources/b.pdf")
+    removed = json.loads((proj / ".tether" / "removed.json").read_text())
+    assert removed[0]["title"] == "Sorting Widgets by Color on Fast Belts" and removed[0]["claims"] is not None
+
+    st = c.get("/api/projects/Widgets/zotero-check").json()
+    by = {r["title"]: r for r in st["removed"]}
+    assert set(by) == {"Sorting Widgets by Color on Fast Belts", "A Paper I Filed Myself"}
+    gone = by["Sorting Widgets by Color on Fast Belts"]
+    assert gone["added_by_tether"] and gone["in_project_before"] and gone["connection"]["how"] == "at removal"
+    mine = by["A Paper I Filed Myself"]
+    assert not mine["added_by_tether"] and not mine["in_project_before"] and mine["connection"] is None
+
+    # trash only what tether added; your own item is never trashed, only taken out of the collection
+    r = c.post("/api/projects/Widgets/zotero-tidy", json={"keys": [gone["key"], "MANUAL01"], "action": "trash"}).json()
+    assert r["done"] == [gone["key"]] and r["skipped"] == ["MANUAL01"]
+    assert web.items[gone["key"]]["data"]["deleted"] == 1 and not web.items["MANUAL01"]["data"].get("deleted")
+    r = c.post("/api/projects/Widgets/zotero-tidy", json={"keys": ["MANUAL01"], "action": "uncollect"}).json()
+    assert r["done"] == ["MANUAL01"] and coll not in web.items["MANUAL01"]["data"]["collections"]
+    assert not [x for x in web.calls if x[0] == "DELETE"]
+    st = c.get("/api/projects/Widgets/zotero-check").json()
+    assert st["removed"] == []
+
+    # "keep" hides an item from the list without touching Zotero
+    web.items["MANUAL02"] = {"key": "MANUAL02", "version": 1, "data": {"key": "MANUAL02", "itemType": "journalArticle",
+                             "title": "Another One", "collections": [coll], "tags": []}}
+    c.post("/api/projects/Widgets/zotero-tidy", json={"keys": ["MANUAL02"], "action": "keep"})
+    assert c.get("/api/projects/Widgets/zotero-check").json()["removed"] == []

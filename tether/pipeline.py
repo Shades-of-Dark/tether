@@ -6,6 +6,7 @@ A project is a folder (usually inside your Obsidian vault). Its PDFs live in
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 import json
 import shutil
 from dataclasses import asdict
@@ -19,7 +20,7 @@ from .models import Citation, Claim, Page, Paper, Rejected
 from .vault import write_vault
 
 PROMPT_VERSION = "3"      # bump when prompts change in a way that should re-read papers
-PIPELINE_VERSION = "3"    # bump when the vault layout changes; out-of-date projects rebuild on open
+PIPELINE_VERSION = "5"    # bump when the vault layout changes; out-of-date projects rebuild on open
 LEGACY_VERSION = "2"      # claims verified by tether 0.7 are reused instead of re-reading the PDF
 
 
@@ -35,9 +36,15 @@ class Reporter:
     """Progress sink. The CLI prints; the app streams these to the browser."""
 
     def __init__(self, on_log: Optional[Callable[[str], None]] = None,
-                 on_stage: Optional[Callable[[str, float], None]] = None):
+                 on_stage: Optional[Callable[[str, float], None]] = None,
+                 on_now: Optional[Callable[[dict], None]] = None):
         self._log = on_log or (lambda m: print(m, flush=True))
         self._stage = on_stage or (lambda s, f: None)
+        self._now = on_now or (lambda d: None)
+
+    def now(self, **what) -> None:
+        """What's happening right now, for the Details panel: paper, index, total, step."""
+        self._now(what)
 
     def log(self, msg: str) -> None:
         self._log(msg)
@@ -140,7 +147,29 @@ def _norm_title(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
 
 
-def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep: Optional[Reporter] = None) -> dict:
+def _nice_name(pdf: Optional[Path], cit: Optional[Citation]) -> Optional[Path]:
+    """Rename a downloaded PDF to 'Author et al. - 2024 - Title.pdf' so Sources reads like a library."""
+    import re
+    if pdf is None:
+        return pdf
+    if cit is None:                                  # a bare PDF link: name it from the PDF itself
+        from .ingest import quick_citation
+        cit = quick_citation(pdf)
+        if cit.title == pdf.stem:
+            return pdf
+    name = f"{cit.short().rsplit(',', 1)[0]} - {cit.year or 'n.d.'} - {cit.title}"
+    if not cit.authors:
+        name = f"{cit.title}"
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" .")[:120].rstrip(" .")
+    dest = pdf.with_name(name + ".pdf")
+    if dest != pdf:
+        pdf.replace(dest)
+    return dest
+
+
+def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep: Optional[Reporter] = None,
+                 on_item: Optional[Callable[..., None]] = None) -> dict:
     """Pull in papers from links and topic searches, and keep them in the project:
     PDFs go to Sources, abstract-only papers to .tether/abstract_only.json. So later
     rebuilds (say, after you drop in another PDF) still include them."""
@@ -148,19 +177,34 @@ def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep:
     cache = out / ".tether"
     cache.mkdir(parents=True, exist_ok=True)
     found: list[tuple] = []                      # (citation | None, pdf | None, abstract | None)
-    for u in urls:
-        rep.log(f"Fetching {u}")
-        cit, pdf, pages = sources.resolve_url(u, cache / "downloads")
-        if pdf is None and pages is None:
-            rep.log(f"  ! couldn't get a PDF from {u}; skipped (download it and drop the file in instead)")
+    item = on_item or (lambda url, **kw: None)
+    for n, u in enumerate(urls, 1):
+        item(u, state="fetching")
+        rep.now(step=f"Fetching link {n} of {len(urls)}: {u}")
+        try:
+            cit, pdf, pages = sources.resolve_url(u, cache / "downloads")
+        except Exception as e:                       # one bad link never stops the others
+            rep.log(f"  ! {u}: couldn't fetch it ({type(e).__name__}). Skipped; download the PDF and drop it in instead.")
+            item(u, state="failed", reason=f"Couldn't reach it ({type(e).__name__})")
             continue
-        found.append((cit, pdf, pages[0].text if pages else None))
+        if pdf is None and pages is None:
+            rep.log(f"  ! {u}: no free PDF or abstract found. Skipped; download the PDF and drop it in instead.")
+            item(u, state="failed", reason="No free PDF or abstract found. Download it and drop the PDF in.")
+            continue
+        label = cit.short() + " | " + cit.title[:70] if cit else u
+        rep.log(f"  + {label}{'' if pdf else '  [abstract only: no free PDF]'}")
+        pdf = _nice_name(pdf, cit)
+        found.append((cit, pdf, pages[0].text if pages else None, u))
     for topic, n, since in topics:
         rep.log(f"Searching OpenAlex for {topic!r}...")
         for w in sources.search_topic(topic, n, since):
-            cit, pdf, pages = sources.resolve_work(w, cache / "downloads")
+            try:
+                cit, pdf, pages = sources.resolve_work(w, cache / "downloads")
+            except Exception as e:
+                rep.log(f"  ! couldn't fetch a search result ({type(e).__name__}); skipped")
+                continue
             if pdf or pages:
-                found.append((cit, pdf, pages[0].text if pages else None))
+                found.append((cit, _nice_name(pdf, cit), pages[0].text if pages else None, None))
                 rep.log(f"  + {cit.short()} | {cit.title[:70]}{'' if pdf else '  [abstract only]'}")
 
     known = _load_known(cache)
@@ -168,16 +212,23 @@ def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep:
     abstracts = json.loads(abs_file.read_text(encoding="utf-8")) if abs_file.exists() else []
     have = {_norm_title(a["citation"]["title"]) for a in abstracts}
     res = {"pdf": 0, "abstract": 0}
-    for cit, pdf, abstract in found:
+    for cit, pdf, abstract, url in found:
+        title = cit.title if cit else (pdf.stem if pdf else url)
+        cite = cit.short() if cit else ""
         if pdf is not None:
             dest = add_to_sources([pdf], out / "Sources")[0]
             if cit:
                 known.setdefault(dest.name, cit)
             res["pdf"] += 1
-        elif cit and abstract and _norm_title(cit.title) not in have:
-            abstracts.append({"citation": asdict(cit), "abstract": abstract})
-            have.add(_norm_title(cit.title))
-            res["abstract"] += 1
+            if url:
+                item(url, state="pdf", title=title, cite=cite, file=dest.name)
+        elif cit and abstract:
+            if _norm_title(cit.title) not in have:
+                abstracts.append({"citation": asdict(cit), "abstract": abstract})
+                have.add(_norm_title(cit.title))
+                res["abstract"] += 1
+            if url:
+                item(url, state="abstract", title=title, cite=cite)
     _save_known(cache, known)
     abs_file.write_text(json.dumps(abstracts, ensure_ascii=False), encoding="utf-8")
     return res
@@ -241,7 +292,17 @@ def disambiguate(papers: list[Paper]) -> None:
     for same in groups.values():
         if len(same) > 1:
             for i, p in enumerate(sorted(same, key=lambda p: p.citation.title.lower())):
-                p.citation.year_suffix = "abcdefghijklmnopqrstuvwxyz"[i]
+                p.citation.year_suffix = _suffix(i)
+
+
+def _suffix(i: int) -> str:
+    """0 -> a, 25 -> z, 26 -> aa, 27 -> ab ... (no limit on how many share an author and year)."""
+    s = ""
+    i += 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        s = chr(97 + r) + s
+    return s
 
 
 class _StageCache:
@@ -260,7 +321,7 @@ class _StageCache:
         return self.data.setdefault(name, {})
 
     def save(self) -> None:
-        for name in ("synthesis", "idea_check"):                  # keep only recent ones
+        for name in ("ideas", "idea_check", "outline"):           # keep only recent ones
             if len(self.data.get(name, {})) > 10:
                 self.data[name] = dict(list(self.data[name].items())[-10:])
         self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
@@ -279,8 +340,8 @@ def _claims_file(cache: Path, paper: Paper) -> Path:
     return cache / "claims" / f"{_key(PROMPT_VERSION, paper.pages)}.json"
 
 
-def paper_claims(llm: LLM, paper: Paper, cache: Path, sc: _StageCache,
-                 fresh: bool = False) -> tuple[list[dict], list[Rejected], int, str]:
+def paper_claims(llm: LLM, paper: Paper, cache: Path, sc: _StageCache, fresh: bool = False,
+                 say: Optional[Callable[[str], None]] = None) -> tuple[list[dict], list[Rejected], int, str]:
     """(kept, rejected, trimmed, how) where how is cached | reused | read.
     reused = claims tether 0.7 already verified for this PDF, trimmed to the central ones (no re-reading).
     fresh = ignore everything saved and read the PDF again ("Rebuild from scratch")."""
@@ -291,14 +352,14 @@ def paper_claims(llm: LLM, paper: Paper, cache: Path, sc: _StageCache,
     legacy = cache / "claims" / f"{paper.legacy_key}.json"
     if paper.legacy_key and legacy.exists() and not fresh:
         d = json.loads(legacy.read_text(encoding="utf-8"))
-        kept, trimmed = stages.select(llm, paper, d["kept"], cache=sc.section("select"))
+        kept, trimmed = stages.select(llm, paper, d["kept"], cache=sc.section("select"), progress=say)
         rejected = [Rejected(**r) for r in d["rejected"]]
         how = "reused"
     else:
         chunks = chunk_pages(paper.id, paper.pages)
-        candidates, rej1 = stages.extract(llm, paper, chunks)
-        chosen, trimmed = stages.select(llm, paper, candidates, cache=sc.section("select"))
-        kept, rej2 = stages.entail(llm, paper, chosen)
+        candidates, rej1 = stages.extract(llm, paper, chunks, progress=say)
+        chosen, trimmed = stages.select(llm, paper, candidates, cache=sc.section("select"), progress=say)
+        kept, rej2 = stages.entail(llm, paper, chosen, progress=say)
         rejected = rej1 + rej2
         how = "read"
     f.parent.mkdir(parents=True, exist_ok=True)
@@ -326,12 +387,19 @@ def estimate(llm: LLM, papers: list[Paper], cache: Path, fresh: bool = False, sy
         cost += (4000 * s_in + 300 * s_out) / 1e6                                           # select
         cost += (12 * 450 * c_in + 12 * 60 * c_out) / 1e6                                   # fact-check
     cost += len(reuse) * (8000 * s_in + 300 * s_out) / 1e6                                  # select only
-    if new or reuse or not synth_cached:                                                     # synthesis + idea check
+    if new or reuse or not synth_cached:                                                     # ideas, check, outline
         n_claims = 10 * len(papers)
-        cost += (n_claims * 70 + 1500) * s_in / 1e6 + 5000 * s_out / 1e6
-        cost += (n_claims * 2 * 120) * c_in / 1e6 + 1500 * c_out / 1e6
+        cost += (n_claims * 45 + 1500) * s_in / 1e6 + 4500 * s_out / 1e6                    # ideas
+        cost += (20 * 8 * 120) * c_in / 1e6 + 1500 * c_out / 1e6                             # idea check
+        cost += (20 * 8 * 40 + 1500) * s_in / 1e6 + 1500 * s_out / 1e6                       # outline
     return {"cost": round(cost * 1.15, 2), "new_papers": len(new), "reused_papers": len(reuse),
             "titles": [p.citation.short() for p in new][:12]}
+
+
+def _isolated(papers: list[Paper], ideas, claim_map) -> list[Paper]:
+    """Papers that share no central idea with any other paper."""
+    used = {claim_map[e.claim].paper_id for i in ideas for e in i.evidence}
+    return [p for p in papers if p.id not in used]
 
 
 def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), topic: Optional[str] = None,
@@ -370,7 +438,12 @@ def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), top
         up_to_date = json.loads(graph.read_text(encoding="utf-8")).get("version") == PIPELINE_VERSION
     except (OSError, ValueError):
         up_to_date = False
-    est = estimate(llm, papers, cache, fresh=fresh, synth_cached=up_to_date and not fresh)
+    # After a tether upgrade (layout version changed) with no new papers and the same question, the
+    # ideas, checks and outline come straight from the saved results: don't quote a price for them.
+    q_changed = (cache / "question.txt").exists() and graph.exists() and \
+        (cache / "question.txt").stat().st_mtime > graph.stat().st_mtime
+    synth_saved = bool(sc.data.get("ideas")) and not q_changed
+    est = estimate(llm, papers, cache, fresh=fresh, synth_cached=(up_to_date or synth_saved) and not fresh)
     if approve is not None and not approve(est):
         raise NeedsApproval(est)
     if est["new_papers"] or est["reused_papers"]:
@@ -384,14 +457,25 @@ def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), top
     trimmed_total = 0
     for i, p in enumerate(papers):
         rep.stage(f"Reading paper {i + 1} of {len(papers)}: {p.citation.short()}", 0.05 + 0.6 * i / len(papers))
-        kept, rej, trimmed, how = paper_claims(llm, p, cache, sc, fresh=fresh)
+        rep.now(paper=p.citation.short(), title=p.citation.title, index=i + 1, total=len(papers),
+                step="Starting", kind=p.source_kind)
+        kept, rej, trimmed, how = paper_claims(llm, p, cache, sc, fresh=fresh, say=lambda m: rep.now(step=m))
         sc.save()
         raw += [(p, c) for c in kept]
         rejected += rej
         trimmed_total += trimmed
-        note = {"cached": "  (cached)", "reused": f"  (reused earlier claims, kept the {len(kept)} most central)",
-                "read": ""}[how]
-        rep.log(f"  {p.id} {p.citation.short():<28} {len(kept):>2} central claims{note}")
+        if how == "cached":
+            rep.log(f"  {p.id} {p.citation.short()}: {len(kept)} key claims (already read; nothing to pay for)")
+        else:
+            why = Counter(r.reason.split(":")[0] for r in rej)
+            extra = [f"{n} {k}" for k, n in (("cited from other work", why.get("secondhand", 0)),
+                                             ("quotes not found in the PDF", why.get("quote not found in paper text", 0)),
+                                             ("not supported by their page", why.get("unsupported", 0))) if n]
+            src = "reused earlier claims" if how == "reused" else "read"
+            rep.log(f"  {p.id} {p.citation.short()}: {src}, kept {len(kept)} key claims"
+                    + (f", {trimmed} less central trimmed" if trimmed else "")
+                    + (f"; rejected {', '.join(extra)}" if extra else ""))
+        rep.now(step=f"Done: {len(kept)} key claims")
 
     claims = [Claim(id=f"C-{i:04d}", paper_id=p.id, text=c["text"], kind=c["kind"], quote=c["quote"],
                     page=c["page"], match_score=c["match_score"], entailment=c.get("entailment", "supported"),
@@ -401,19 +485,48 @@ def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), top
     claim_map = {c.id: c for c in claims}
 
     rep.stage("Weaving the papers into central ideas", 0.72)
-    ideas, outline, dropped = stages.synthesize(llm, claims, paper_map, question, cache=sc.section("synthesis"))
-    rep.stage("Fact-checking each idea against its evidence", 0.86)
-    ideas, idea_rej, remap = stages.check_ideas(llm, ideas, claim_map, paper_map, cache=sc.section("idea_check"))
+    rep.now(paper=None, title=None, index=None, total=len(papers),
+            step=f"Connecting {len(claims)} key claims from {len(papers)} papers into ideas that run across them")
+    ideas, dropped = stages.synthesize(llm, claims, paper_map, question, cache=sc.section("ideas"))
     sc.save()
-    for sec in outline["sections"]:
-        sec["ideas"] = [remap[i] for i in sec["ideas"] if i in remap]
-    outline["sections"] = [s_ for s_ in outline["sections"] if s_["ideas"]]
+    min_papers = stages.MIN_PAPERS if len(papers) >= stages.MIN_PAPERS else 1
+    ideas, single = stages.split_single_source(ideas, claim_map, min_papers)
+    for n, s1 in enumerate(single, 1):
+        s1.id = f"S-{n:02d}"
+    if single:
+        rep.log(f"  {len(single)} single-paper result(s) kept as single-source findings, not central ideas")
+    rep.stage("Fact-checking each idea against its evidence", 0.84)
+    rep.now(step=f"Checking each of {len(ideas)} ideas against its quotes; narrowing or dropping any that overreach")
+    ideas, idea_rej, _remap = stages.check_ideas(llm, ideas, claim_map, paper_map, cache=sc.section("idea_check"))
+    sc.save()
     if idea_rej:
         rep.log(f"  {len(idea_rej)} idea(s) dropped: their statement went beyond the evidence (see Audit)")
+    narrowed = sum(bool(i.narrowed_from) for i in ideas)
+    if narrowed:
+        rep.log(f"  {narrowed} idea(s) reworded by the fact-check to say only what the evidence shows")
+    rep.stage("Outlining the review", 0.9)
+    rep.now(step=f"Ordering {len(ideas)} ideas into sections and naming the open questions")
+    outline, dropped_outline = stages.outline(llm, ideas, claim_map, question, cache=sc.section("outline"),
+                                              single=single)
+    dropped += dropped_outline
+    sc.save()
+    rep.log(f"  {len(ideas)} central ideas from {len(claims)} claims across {len(papers)} papers")
+
+    rep.stage("Following the citations behind claims papers report from other work", 0.93)
+    from . import citations
+    rep.now(paper=None, title=None, index=None, step="Matching cited claims to each paper's reference list")
+    cited = citations.follow(paper_map, rejected, cache, log=rep.log, now=lambda m: rep.now(step=m), lookup=lookup)
+    have_titles = {_norm_title(p.citation.title) for p in papers}
+    have_dois = {p.citation.doi.lower() for p in papers if p.citation.doi}
+    for w in cited:
+        w_in = _norm_title(w.title) in have_titles or bool(w.doi and w.doi.lower() in have_dois)
+        setattr(w, "in_project", w_in)
 
     rep.stage("Writing notes to Obsidian", 0.95)
+    rep.now(step=f"Writing {len(ideas)} idea notes, {len(papers)} paper notes, the outline and the overview")
     write_vault(out, paper_map, claims, ideas, outline, rejected + idea_rej, dropped, question,
-                vault_root=Path(vault_root) if vault_root else None, trimmed=trimmed_total)
+                vault_root=Path(vault_root) if vault_root else None, trimmed=trimmed_total, single=single,
+                cited=cited)
     (cache / "graph.json").write_text(json.dumps({
         "version": PIPELINE_VERSION,
         "papers": [p.to_dict() | {"pages": len(p.pages),
@@ -421,11 +534,15 @@ def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), top
                    for p in papers],
         "claims": [asdict(c) for c in claims],
         "ideas": [asdict(i) for i in ideas],
+        "single_source": [asdict(i) for i in single],
+        "cited": [asdict(w) | {"in_project": getattr(w, "in_project", False)} for w in cited],
         "outline": outline,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     rep.stage("Done", 1.0)
-    tensions = sum(any(e.stance == "contradicts" for e in i.evidence) or any(l.kind == "in_tension" for l in i.links)
-                   for i in ideas)
-    return {"papers": len(papers), "claims": len(claims), "ideas": len(ideas), "contradictions": tensions,
+    disagreements = (sum(bool(stages.disagreeing_papers(i, claim_map)) for i in ideas)
+                     + len(stages.tensions(ideas, claim_map)))
+    return {"papers": len(papers), "claims": len(claims), "ideas": len(ideas), "contradictions": disagreements,
+            "single_source": len(single), "isolated": len(_isolated(papers, ideas, claim_map)),
+            "suggested": sum(not getattr(w, "in_project", False) for w in cited),
             "rejected": len(rejected) + len(idea_rej), "trimmed": trimmed_total, "dropped_points": dropped,
             "estimate": est["cost"]}

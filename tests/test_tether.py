@@ -92,19 +92,29 @@ def test_end_to_end(tmp_path: Path):
     assert set(ideas) == {"I-01 Beta filtering of widget weight", "I-02 Weight-aware scheduling"}
     kal, pol = ideas["I-01 Beta filtering of widget weight"], ideas["I-02 Weight-aware scheduling"]
     assert "## Supports" in kal and "Lovelace & Turing, 2025a" in kal and "Lovelace & Turing, 2025b" in kal
-    assert "> Our {beta filter} estimates widget weight" in kal                   # verbatim quote from the PDF
+    assert "> “Our {beta filter} estimates widget weight" in kal                  # verbatim quote from the PDF, in quotes
+    assert "two seconds of operation” ([[Papers/P01 Lovelace & Turing, 2025b|Lovelace & Turing, 2025b]], p. 2)" in kal  # APA in-text
     assert "Sources/a.pdf#page=2|PDF p. 2" in kal                                  # jumps to the page
     assert "builds on [[Ideas/I-02 Weight-aware scheduling|Weight-aware scheduling]]" in kal
     assert "doesn't exist" not in kal                                              # link to a missing idea dropped
     assert "## Contradicts" in pol and "only shown in simulation" in pol          # narrowed by the idea check
-    assert not any("Fabricated" in k or "Overreaching" in k for k in ideas)
+    # the narrowed idea's headline is the corrected statement; the original is kept for transparency
+    assert "**Weight-aware scheduling helped only in simulation; a wrong estimate hurt.**" in pol
+    assert "Originally" not in pol and "Was: Conditioning the scheduler on weight helps" in audit
+    assert not any("Fabricated" in k or "Overreaching" in k or "Single-paper" in k for k in ideas)
 
     outline = (out / "Lit Review Outline.md").read_text()
-    assert "Estimation and control" in outline and "Ghost section" not in outline
+    assert "Estimation and scheduling" in outline and "Ghost section" not in outline
     assert "C-9999" not in outline and "citing nothing real" not in outline
     assert "Nobody tested off-center widgets" in outline
+    # a one-paper idea is not a central idea: it's listed as a single-source finding instead
+    assert "## Single-source findings" in outline and "**Single-paper result**" in outline
+    assert "Weight-aware scheduling helped only in simulation" in outline and "(scope: only shown" not in outline
     overview = (out / "00 Overview.md").read_text()
     assert "2 central ideas drawn from 2 papers" in overview and "Where the papers disagree" in overview
+    assert "contradicted by" in overview and "share no idea" not in overview
+    assert stats["single_source"] == 1 and stats["isolated"] == 0
+    assert "Ideas the fact-check reworded" in audit and "Single-paper results kept" in audit
     paper = next((out / "Papers").glob("P01*")).read_text()
     assert "## Feeds these ideas" in paper and "## Key claims" in paper and "tested only in simulation" in paper
     assert not (out / "Claims").exists() and not (out / "Concepts").exists()
@@ -391,7 +401,9 @@ def test_app_flow(tmp_path: Path, monkeypatch):
     assert j["state"] == "done" and j["run"] == 1, j
     st = c.get("/api/state").json()
     assert st["projects"][0]["claims"] == j["stats"]["claims"] and st["projects"][0]["question"] == "Does it help?"
-    assert st["projects"][0]["ideas"] == j["stats"]["ideas"] == 2 and st["projects"][0]["current"]
+    # a's only finding is about the filter, so the scheduler thread rests on one paper: single-source, not an idea
+    assert st["projects"][0]["ideas"] == j["stats"]["ideas"] == 1 and st["projects"][0]["current"]
+    assert j["stats"]["single_source"] == 2
     assert "[[Tether/Topic one two/Ideas/I-01" in (vault / "Tether" / name / "Lit Review Outline.md").read_text()
 
     c.post("/api/open", json={"project": name, "target": "obsidian"})
@@ -632,7 +644,7 @@ def test_stages_ask_for_the_right_roles(tmp_path: Path):
     llm = FakeLLM()
     run(llm, out=tmp_path / "P", pdfs=[many_findings_pdf(tmp_path, n=12)], lookup=False)
     assert dict(llm.roles) == {"claims": "read", "selection": "curate", "verdicts": "check",
-                               "synthesis": "synthesize", "idea_checks": "check"}
+                               "synthesis": "synthesize", "idea_checks": "check", "outline": "synthesize"}
 
 
 def test_approval_and_monthly_cap(tmp_path: Path, monkeypatch):
@@ -732,4 +744,238 @@ def test_cli_build_end_to_end(tmp_path: Path, monkeypatch, capsys):
     a, b = _two_papers(tmp_path)
     assert cli.main(["build", str(a), str(b), "--out", str(tmp_path / "out"), "--offline"]) == 0
     out = capsys.readouterr().out
-    assert "Done: 2 central ideas from 2 papers" in out and "Claude usage" in out
+    assert "Done: 1 central idea" in out and "Claude usage" in out
+
+
+def test_cut_off_answer_retries_once_with_more_room(monkeypatch):
+    import inspect
+    from types import SimpleNamespace as NS
+    import pytest
+    from tether import config, llm as llmmod
+    monkeypatch.setattr(config, "_SHELL_ENV", {"ANTHROPIC_API_KEY": "test"})
+    monkeypatch.setattr(llmmod, "_mode_for", {"m": "structured"})
+    monkeypatch.setattr(llmmod, "LEDGER", __import__("pathlib").Path(__import__("tempfile").mkdtemp()) / "s.json")
+    c = llmmod.ClaudeLLM(model="m", judge_model="j")
+    real = inspect.signature(c.client.messages.create)
+    sent, script = [], []
+
+    def create(**kw):
+        real.bind(**kw)
+        sent.append(kw["max_tokens"])
+        return script.pop(0)
+    monkeypatch.setattr(c.client.messages, "create", create)
+    cut = NS(stop_reason="max_tokens", content=[NS(type="text", text='{"ideas": [')], usage=NS(input_tokens=1, output_tokens=1))
+    ok = NS(stop_reason="end_turn", content=[NS(type="text", text='{"ideas": []}')], usage=NS(input_tokens=1, output_tokens=1))
+    schema = {"type": "object", "properties": {"ideas": {"type": "array"}}, "required": ["ideas"]}
+
+    script[:] = [cut, ok]
+    assert c.call(system="s", user="u", name="synthesis", schema=schema, max_tokens=8000) == {"ideas": []}
+    assert sent == [8000, 16000]                                   # more room, not the same request again
+    sent.clear()
+    script[:] = [cut, cut]
+    with pytest.raises(llmmod.CutOff):
+        c.call(system="s", user="u", name="synthesis", schema=schema, max_tokens=8000)
+    assert sent == [8000, 16000]                                   # two tries total, then a clear error
+    short, _ = llmmod.friendly_error(llmmod.CutOff("synthesis", 16000))
+    assert "fewer papers" not in short and "work already done is saved" in short
+    assert max(sent) <= llmmod.MAX_OUTPUT < 21000                   # never needs streaming
+
+
+def test_synthesis_stays_bounded_for_a_50_paper_review(tmp_path: Path):
+    """A 50-paper review (~600 claims) must fit: the input is compact, and even the largest answer
+    the format allows (20 ideas x 8 evidence ids x 3 links) is far under the output budget.
+    If the model returns more than the limits, the code trims it."""
+    import json
+    from tether import stages
+    from tether.models import Citation, Claim, Paper
+    papers = {f"P{i:02d}": Paper(f"P{i:02d}", Citation(title=f"Example study {i}", authors=["A Person"], year=2020), [])
+              for i in range(1, 51)}
+    claims = [Claim(f"C-{n:04d}", f"P{(n % 50) + 1:02d}", f"Example claim number {n} about method alpha under condition {n % 7}.",
+                    "finding", "q", 1, 100.0, "supported", "only in the example setting" if n % 5 == 0 else "")
+              for n in range(1, 601)]
+    ids = [c.id for c in claims]
+
+    class Greedy(FakeLLM):
+        def _synthesis(self, user):
+            self.input_chars = len(user)
+            return {"ideas": [{"key": f"K{k}", "title": f"Idea {k}", "statement": "An example statement. " * 5,
+                               "supports": ids[k * 20: k * 20 + 12], "qualifies": ids[k * 20 + 12: k * 20 + 15],
+                               "contradicts": [ids[k * 20 + 15]],
+                               "links": [{"to": f"K{(k + j) % 30}", "kind": "related", "why": "w"} for j in range(1, 6)]}
+                              for k in range(30)]}
+    llm = Greedy()
+    ideas, dropped = stages.synthesize(llm, claims, papers)
+    assert len(ideas) == stages.MAX_IDEAS == 20
+    assert all(len(i.evidence) <= stages.MAX_EVIDENCE for i in ideas) and all(len(i.links) <= 3 for i in ideas)
+    assert llm.input_chars / 4 < 60000                               # ~600 claims fit easily in one prompt
+
+    # the biggest answer the format allows, in tokens (≈ chars / 3.5 for JSON with ids)
+    biggest = {"ideas": [{"key": f"K{k}", "title": " ".join(["word"] * 9), "statement": " ".join(["word"] * 55),
+                          "supports": ids[:6], "qualifies": ids[6:7], "contradicts": ids[7:8],
+                          "links": [{"to": "K1", "kind": "builds_on", "why": " ".join(["word"] * 15)}] * 3}
+                         for k in range(stages.MAX_IDEAS)]}
+    assert len(json.dumps(biggest)) / 3.5 < 12000 * 0.75              # comfortable margin under the budget
+    ol, _ = stages.outline(FakeLLM(), ideas, {c.id: c for c in claims})
+    assert sum(len(s["ideas"]) for s in ol["sections"]) == len(ideas)
+
+
+def test_year_suffix_never_runs_out():
+    from tether.pipeline import _suffix
+    assert [_suffix(i) for i in (0, 1, 25, 26, 27, 51, 52)] == ["a", "b", "z", "aa", "ab", "az", "ba"]
+
+
+def test_disagreement_needs_two_different_papers():
+    from tether.models import Claim, Evidence, Idea, IdeaLink
+    from tether import stages
+
+    def c(cid, pid):
+        return Claim(cid, pid, "x", "finding", "q", 1, 100.0, "supported")
+    claims = {x.id: x for x in [c("C1", "P1"), c("C2", "P1"), c("C3", "P2"), c("C4", "P2"), c("C5", "P3")]}
+    own_caveat = Idea("I-01", "a", "s", [Evidence("C1", "supports"), Evidence("C2", "contradicts"), Evidence("C3", "supports")])
+    real = Idea("I-02", "b", "s", [Evidence("C3", "supports"), Evidence("C5", "contradicts"), Evidence("C1", "supports")])
+    assert stages.disagreeing_papers(own_caveat, claims) == []          # P1 contradicting its own result
+    assert stages.disagreeing_papers(real, claims) == ["P3"]
+    # tension between two ideas built from the very same papers isn't papers disagreeing
+    same = Idea("I-03", "c", "s", [Evidence("C2", "supports"), Evidence("C4", "supports")],
+                links=[IdeaLink("I-01", "in_tension", "same papers")])
+    other = Idea("I-04", "d", "s", [Evidence("C5", "supports"), Evidence("C4", "supports")],
+                 links=[IdeaLink("I-01", "in_tension", "different papers")])
+    pairs = stages.tensions([own_caveat, same, other], claims)
+    assert [(a.id, b.id) for a, b, _ in pairs] == [("I-04", "I-01")]
+    # one-paper ideas are split off, and links into them are dropped
+    lone = Idea("I-05", "e", "s", [Evidence("C5", "supports")])
+    other.links.append(IdeaLink("I-05", "related", "x"))
+    shared, single = stages.split_single_source([own_caveat, other, lone], claims)
+    assert [i.id for i in shared] == ["I-01", "I-04"] and [i.id for i in single] == ["I-05"]
+    assert all(l.to != "I-05" for l in other.links)
+
+
+def test_topic_search_is_reviewed_before_anything_is_added(tmp_path: Path, monkeypatch):
+    """Searching never downloads, adds, or syncs. Only the papers the user ticks are added."""
+    import json
+    from fastapi.testclient import TestClient
+    from tether import app as appmod, config
+    import tether.sources as src
+
+    env = tmp_path / ".env"
+    monkeypatch.setattr(config, "ENV_FILE", env)
+    monkeypatch.setattr(config, "_SHELL_ENV", {})
+    vault = tmp_path / "V"
+    (vault / ".obsidian").mkdir(parents=True)
+    config.set_value("TETHER_VAULT", str(vault))
+    c = TestClient(appmod.app)
+    name = c.post("/api/projects", json={"name": "Widgets"}).json()["name"]
+    proj = vault / "Tether" / name
+    (proj / ".tether" / "abstract_only.json").write_text(json.dumps([{"citation": {"title": "Belt Speed and Widget Spacing", "doi": None}, "abstract": "x"}]))
+
+    def work(i, title, pdf):
+        return {"id": f"https://openalex.org/W{i}", "title": title, "publication_year": 2024,
+                "authorships": [{"author": {"display_name": "Grace Hopper"}}], "cited_by_count": i,
+                "abstract_inverted_index": {"An": [0], "abstract.": [1]}, "type": "article",
+                "best_oa_location": {"pdf_url": "https://example.org/x.pdf"} if pdf else None,
+                "primary_location": {"source": {"display_name": "Journal of Widgets"}}}
+    asked = {}
+
+    def fake_search(topic, n, since, oa_only=True):
+        asked.update(topic=topic, n=n, since=since, oa_only=oa_only)
+        return [work(1, "Belt Speed and Widget Spacing", True), work(2, "Sorting Widgets by Color", False)]
+    monkeypatch.setattr(src, "search_topic", fake_search)
+    monkeypatch.setattr(src, "download", lambda *a, **k: (_ for _ in ()).throw(AssertionError("downloaded during search")))
+    requested = []
+    monkeypatch.setattr(appmod.builder, "request", lambda name, **kw: requested.append(kw))
+
+    res = c.post(f"/api/projects/{name}/search", json={"topic": "widget sorting", "n": 99, "oa_only": False}).json()["results"]
+    assert asked == {"topic": "widget sorting", "n": 50, "since": None, "oa_only": False}
+    assert [(r["id"], r["in_project"], r["free_pdf"]) for r in res] == [("W1", True, True), ("W2", False, False)]
+    assert res[1]["abstract"] == "An abstract." and res[1]["venue"] == "Journal of Widgets"
+    assert requested == [] and not list((proj / "Sources").glob("*.pdf"))     # nothing added by searching
+
+    # the old one-step "find & add" is gone
+    assert c.post(f"/api/projects/{name}/add", json={"topic": "widget sorting"}).status_code == 400
+    assert c.post(f"/api/projects/{name}/add", json={"works": ["W2", "not-an-id"]}).json()["added"] == 1
+    assert requested[-1]["urls"] == ["https://openalex.org/W2"]
+
+    # an OpenAlex link resolves through the work record
+    monkeypatch.setattr(src, "get_work", lambda wid: work(2, "Sorting Widgets by Color", False) if wid == "W2" else None)
+    cit, pdf, pages = src.resolve_url("https://openalex.org/W2", tmp_path)
+    assert cit.title == "Sorting Widgets by Color" and pdf is None and pages[0].text == "An abstract."
+
+
+def test_cited_work_behind_secondhand_claims(tmp_path: Path, monkeypatch):
+    """A claim the paper only reports from someone else isn't credited to it, but the cited paper is
+    found in the reference list, looked up, and offered as suggested reading."""
+    from tether import citations
+    from tether.ingest import read_pdf
+    from tether.models import Citation, Paper, Rejected
+
+    body = [[FILLER, "Earlier studies relied on one fixed schedule for every shift on the widget line [2].",
+             "Belt speed was later tuned by hand for each widget size (Hopper et al., 2019).", FILLER],
+            [FILLER, "References",
+             "[1] A. Lovelace. Notes on the analytical engine. Scientific Memoirs, 1843.",
+             "[2] G. Hopper and A. Turing. Fixed schedules for widget lines. Journal of Widgets, 12(3):1-9, 2018.",
+             "[3] E. Dijkstra. A note on two problems in connexion with graphs. Numerische Mathematik, 1959.",
+             "[4] B. Liskov. Data abstraction and hierarchy. SIGPLAN Notices, 1988.",
+             "[5] D. Knuth. The art of computer programming. Addison-Wesley, 1968."]]
+    pdf = make_pdf(tmp_path / "w.pdf", "Widget Lines Revisited", body)
+    style, refs = citations.split_references(citations.reference_text(pdf))
+    assert style == "numeric" and len(refs) == 5 and refs[1][0] == 2 and "Fixed schedules" in refs[1][1]
+    assert citations.markers("as shown in [2, 4-5] and (3)", "numeric", 5) == [2, 4, 5, 3]
+    assert citations.markers("see Hopper et al. (2019) and Turing & Lovelace, 2020", "author-year", 0) == [("Hopper", 2019), ("Turing", 2020)]
+
+    pages, _ = read_pdf(pdf)
+    paper = Paper(id="P01", citation=Citation("Widget Lines Revisited"), pages=pages, source_kind="fulltext", path=str(pdf))
+    rej = [Rejected("P01", "Earlier work used fixed schedules.",
+                    "Earlier studies relied on one fixed schedule for every shift on the widget line", "secondhand: paper is citing other work"),
+           Rejected("P01", "Unrelated.", "x", "quote not found in paper text")]
+    asked = []
+
+    def fake_resolve(entry):
+        asked.append(entry)
+        return {"title": "Fixed Schedules for Widget Lines", "authors": ["Grace Hopper", "Alan Turing"], "year": 2018,
+                "venue": "Journal of Widgets", "doi": "10.1234/fixed", "url": "https://doi.org/10.1234/fixed",
+                "openalex": "W42", "free_pdf": True}
+    monkeypatch.setattr(citations, "resolve_reference", fake_resolve)
+    works = citations.follow({"P01": paper}, rej, tmp_path / "cache", log=lambda m: None)
+    assert [w.title for w in works] == ["Fixed Schedules for Widget Lines"]
+    assert works[0].cited_by[0]["page"] == 1 and works[0].openalex == "W42"
+    assert len(asked) == 1 and "Fixed schedules for widget lines" in asked[0]
+    citations.follow({"P01": paper}, rej, tmp_path / "cache", log=lambda m: None)
+    assert len(asked) == 1                                         # cached: looked up once per project
+
+
+def test_suggested_reading_reaches_the_notes_and_the_app(tmp_path: Path, monkeypatch):
+    import json
+    from fastapi.testclient import TestClient
+    from tether import app as appmod, citations, config
+    import tether.sources as src
+
+    monkeypatch.setattr(src, "lookup_by_title", lambda t: None)
+    monkeypatch.setattr(citations, "resolve_reference", lambda entry: {
+        "title": "Fixed Schedules for Widget Lines", "authors": ["Grace Hopper"], "year": 2018, "venue": "Journal of Widgets",
+        "doi": "10.1234/fixed", "url": "https://doi.org/10.1234/fixed", "openalex": "W42", "free_pdf": True})
+    env = tmp_path / ".env"
+    monkeypatch.setattr(config, "ENV_FILE", env)
+    monkeypatch.setattr(config, "_SHELL_ENV", {})
+    vault = tmp_path / "V"
+    (vault / ".obsidian").mkdir(parents=True)
+    config.set_value("TETHER_VAULT", str(vault))
+    proj = vault / "Tether" / "Widgets"
+    a = make_pdf(tmp_path / "a.pdf", "Weight Aware Scheduling for a Widget Line", [
+        [FILLER, "FINDING: Our {beta filter} estimates widget weight within five percent after two seconds of operation.",
+         "Earlier studies by Smith et al. relied on one fixed schedule for every shift [1].", FILLER],
+        [FILLER, "References", "[1] G. Hopper. Fixed schedules for widget lines. Journal of Widgets, 2018.",
+         "[2] A. Lovelace. Notes. Memoirs, 1843.", "[3] A. Turing. Machines. Mind, 1950.",
+         "[4] E. Dijkstra. Graphs. Numerische Mathematik, 1959.", "[5] B. Liskov. Abstraction. SIGPLAN, 1988."]])
+    b = make_pdf(tmp_path / "b.pdf", "Robust Throughput Without Weight Knowledge", [
+        [FILLER, "FINDING: The {beta filtering} stage converges slowly for widgets loaded far from the belt center.", FILLER]])
+    stats = run(FakeLLM(), out=proj, pdfs=[a, b], lookup=True)
+    assert stats["suggested"] == 1
+    notes = "\n".join(p.read_text() for p in (proj / "Papers").glob("*.md"))
+    assert "## Cited work behind its claims" in notes and "Cites: **Fixed Schedules for Widget Lines** (Hopper, 2018)" in notes
+    overview = (proj / "00 Overview.md").read_text()
+    assert "Suggested reading: cited by your papers" in overview and "Fixed Schedules for Widget Lines" in overview
+
+    c = TestClient(appmod.app)
+    sug = c.get("/api/projects/Widgets/suggested").json()["results"]
+    assert len(sug) == 1 and sug[0]["id"] == "W42" and sug[0]["free_pdf"] and sug[0]["cited_by"] == 1
+    assert "relied on one fixed schedule" in sug[0]["why"][0]["quote"]

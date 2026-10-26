@@ -117,6 +117,23 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .topicrow { display: grid; grid-template-columns: 1fr 74px 92px; gap: 8px; }
   .hint { font-size: 12px; color: var(--dim); margin-top: 6px; }
+  .results { border: 1px solid var(--line); background: var(--ink-2); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .reshead { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; position: sticky; top: 0; background: var(--ink-2); padding-bottom: 10px; border-bottom: 1px solid var(--line); z-index: 1; }
+  .reslist { display: flex; flex-direction: column; gap: 6px; max-height: 620px; overflow: auto; }
+  .res { display: grid; grid-template-columns: 22px 1fr; gap: 12px; padding: 12px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .res:hover { background: var(--ink-3); }
+  .res.on { border-color: var(--flare); background: var(--flare-soft); }
+  .res.have { opacity: .55; cursor: default; }
+  .res input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--flare); }
+  .res h4 { margin: 0 0 4px; font-size: 15px; font-weight: 500; line-height: 1.35; }
+  .res .meta { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .badge { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 3px 6px; border-radius: 2px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.pdf { border-color: rgba(46,196,182,.5); color: var(--teal); }
+  .badge.abs { border-color: rgba(244,211,94,.5); color: var(--gold); }
+  .badge.rev { border-color: rgba(255,90,54,.5); color: var(--flare); }
+  .res details { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.55; }
+  .res summary { cursor: pointer; font-size: 12px; color: var(--dim); }
   .go { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .go .btn.flare { font-size: 18px; padding: 14px 28px; }
 
@@ -141,6 +158,76 @@
   .toast.bad { background: var(--bad); color: #fff; }
 
 
+  /* project page: main column + a rail on the right */
+  main.wide { max-width: 1500px; }
+  .projwrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
+  .projmain { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .rail { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 24px; }
+  .rail .card { border: 1px solid var(--line); background: var(--ink-2); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .rail textarea { min-height: 96px; font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  .zchead { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+  .zctitle { font-size: 15px; font-weight: 500; }
+  .zcsec { font-size: 12px; color: var(--muted); margin-top: 6px; font-weight: 500; }
+  .zclist { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow: auto; }
+  .zcrow { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 7px 6px; border-radius: 3px; cursor: pointer; font-size: 13px; }
+  .zcrow:hover { background: var(--ink-3); }
+  .zcrow input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--flare); }
+  .zcrow .zt { line-height: 1.35; }
+  .zcrow .zw { font-size: 11px; margin-top: 3px; color: var(--muted); }
+  .zcrow .zw.no { color: var(--gold); } .zcrow .zw.yes { color: var(--teal); }
+  .zcacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  @media (max-width: 1250px) { .projwrap { grid-template-columns: 1fr; } .rail { position: static; } }
+  /* details: what's happening now */
+  .now { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--flare); border-radius: 4px; background: var(--ink); margin-bottom: 12px; }
+  .now .nlabel { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--flare); }
+  .now .npaper { font-size: 17px; font-weight: 500; }
+  .now .ntitle { font-size: 13px; color: var(--muted); }
+  .now .nstep { font-size: 14px; color: var(--paper); margin-top: 4px; }
+  .now .nstep::before { content: "→ "; color: var(--flare); }
+  .log .ok { color: var(--teal); }
+  .lognote { font-size: 12px; color: var(--dim); margin: 8px 0 0; }
+  /* papers just added */
+  .adds { border: 1px solid rgba(46,196,182,.35); background: var(--ink-2); border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .adds.busy { border-color: rgba(255,90,54,.45); }
+  .adds .ahead { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .adds .atitle { font-size: 16px; font-weight: 500; }
+  .alist { display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow: auto; }
+  .arow { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 6px 4px; border-top: 1px solid var(--ink-3); font-size: 13px; }
+  .arow .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .arow .t small { color: var(--dim); margin-left: 6px; font-family: var(--mono); font-size: 11px; }
+  .arow .why { color: var(--muted); font-size: 12px; text-align: right; }
+  .ic { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; border: 1.5px solid var(--dim); color: var(--dim); }
+  .ic.ok { border-color: var(--teal); background: var(--teal); color: var(--ink); }
+  .ic.warn { border-color: var(--gold); color: var(--gold); }
+  .ic.bad { border-color: var(--bad); color: var(--bad); }
+  .ic.spin { border-color: rgba(255,90,54,.25); border-top-color: var(--flare); animation: spin .9s linear infinite; }
+  .tick { display: inline-flex; gap: 4px; align-items: center; font-family: var(--mono); font-size: 11px; color: var(--teal); white-space: nowrap; }
+  .tick.off { color: var(--dim); }
+  /* paper list */
+  .papers { display: flex; flex-direction: column; gap: 10px; }
+  .phead { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  .pcount { font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+  .pcount small { font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+  .ptools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ptools input { width: 220px; padding: 8px 10px; font-size: 13px; }
+  .ptools select { background: var(--ink-2); color: var(--paper); border: 1px solid var(--line); border-radius: 3px; padding: 8px; font: inherit; font-size: 13px; }
+  .pfilters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pf { font-size: 12px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+  .pf b { font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .pf.on { border-color: var(--flare); background: var(--flare-soft); }
+  .pf:disabled { opacity: .35; cursor: default; }
+  .plist { border: 1px solid var(--line); border-radius: 6px; max-height: 560px; overflow: auto; background: var(--ink-2); }
+  .prow { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 14px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--ink-3); }
+  .prow:first-child { border-top: none; }
+  .prow:hover { background: var(--ink-3); }
+  .prow .pt { font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .prow .pm { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .prow .ps { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .prow .ps.warn { color: var(--gold); } .prow .ps.busy { color: var(--flare); }
+  .prow .pa { display: flex; gap: 4px; }
+  .prow .pa .btn { padding: 4px 8px; font-size: 11px; }
+  .pempty { padding: 26px; text-align: center; color: var(--muted); font-size: 14px; }
+  @media (max-width: 760px) { .prow { grid-template-columns: 22px 1fr; } .prow .pz, .prow .pa { grid-column: 2; } .ptools input { width: 100%; } }
   /* status card */
   .status { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; border: 1px solid var(--line); background: var(--ink-2); border-radius: 8px; padding: 14px 16px; margin-top: -6px; }
   .status.ok { border-color: rgba(46,196,182,.35); } .status.err { border-color: rgba(255,77,109,.5); background: rgba(255,77,109,.06); }
@@ -398,7 +485,8 @@
     </section>
 
     <!-- ============ PROJECT ============ -->
-    <section id="vProject" hidden style="display:flex;flex-direction:column;gap:24px">
+    <section id="vProject" class="projwrap" hidden>
+     <div class="projmain">
       <div class="projhead">
         <div><div class="eyebrow">Project</div><h2 class="h-big" id="projTitle"></h2></div>
         <div class="row"><button class="btn small ghost" id="projFolder">Show folder</button><button class="btn small" id="projObsidian" hidden>Open in Obsidian</button></div>
@@ -416,6 +504,36 @@
         <div class="sbar" id="sBar" hidden><i></i></div>
       </div>
 
+      <div class="run" id="run" hidden>
+        <div class="now" id="now" hidden>
+          <div class="nlabel" id="nLabel">Working on</div>
+          <div class="npaper" id="nPaper"></div>
+          <div class="ntitle" id="nTitle"></div>
+          <div class="nstep" id="nStep"></div>
+        </div>
+        <div class="stage"><b id="stage" style="font-weight:500">Starting</b><span id="pct">0%</span></div>
+        <div class="bar live" id="bar"><i></i></div>
+        <div class="log" id="log"></div>
+        <div class="lognote" id="logNote" hidden></div>
+        <div id="done" hidden>
+          <div class="stats">
+            <div class="stat teal"><b id="sIdeas">0</b><span>central ideas</span></div>
+            <div class="stat"><b id="sPapers">0</b><span>papers</span></div>
+            <div class="stat"><b id="sClaims">0</b><span>key claims</span></div>
+            <div class="stat flare"><b id="sContra">0</b><span>disagreements</span></div>
+          </div>
+          <div class="row" style="margin-top:16px"><button class="btn flare" id="doneObsidian">Open in Obsidian</button><button class="btn zbtn" id="zSyncBtn" hidden>Sync to Zotero again</button><span class="fine" id="zSyncMsg"></span></div>
+        </div>
+      </div>
+
+      <div class="adds" id="adds" hidden>
+        <div class="ahead">
+          <div><div class="atitle" id="aTitle"></div><div class="muted" id="aSub" style="font-size:13px"></div></div>
+          <button class="btn small ghost" id="aClose">Dismiss</button>
+        </div>
+        <div class="alist" id="aList"></div>
+      </div>
+
       <div>
         <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add PDF files">
           <div>
@@ -428,8 +546,6 @@
           <button class="btn zbtn" id="zImportBtn" hidden>Import from Zotero…</button>
           <span class="fine" id="zImportHint"></span>
         </div>
-        <div class="files" id="files" style="margin-top:12px"></div>
-        <div class="files" id="absList" style="margin-top:8px"></div>
       </div>
 
       <div class="grid2">
@@ -439,33 +555,76 @@
           <div class="row" style="margin-top:8px"><button class="btn" id="addLinks" disabled>Add links</button><span class="hint" style="margin:0">arXiv, DOI or PDF links. Paywalled papers come in as their abstract.</span></div>
         </div>
         <div>
-          <div class="label">Or find papers on a topic</div>
+          <div class="label">Or search for papers on a topic</div>
           <div class="topicrow">
             <input type="text" id="topic" placeholder="Search terms">
-            <input type="number" id="n" value="12" min="1" max="40" title="How many papers" aria-label="How many papers">
+            <input type="number" id="n" value="20" min="1" max="50" title="How many results" aria-label="How many results">
             <input type="number" id="since" placeholder="Since" min="1950" max="2100" title="Earliest publication year" aria-label="Earliest year">
           </div>
-          <div class="row" style="margin-top:8px"><button class="btn" id="addTopic" disabled>Find &amp; add</button><span class="hint" style="margin:0">Open-access papers from OpenAlex · how many · earliest year</span></div>
-          <div class="label" style="margin-top:18px">Research question <span style="text-transform:none;letter-spacing:0">(optional)</span></div>
-          <input type="text" id="question" placeholder="What is your lit review trying to answer?">
-          <div class="hint" id="qHint">Organizes the outline. Saved automatically.</div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn" id="addTopic" disabled>Search</button>
+            <label class="fine" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="oaOnly" checked style="width:auto"> Only papers with a free PDF</label>
+          </div>
+          <div class="hint">From OpenAlex. You review the results first: nothing is added to the project or to Zotero until you pick it.</div>
+          <button class="btn ghost" id="suggestBtn" style="margin-top:10px" hidden>Papers your sources cite</button>
         </div>
       </div>
 
-      <div class="run" id="run" hidden>
-        <div class="stage"><b id="stage" style="font-weight:500">Starting</b><span id="pct">0%</span></div>
-        <div class="bar live" id="bar"><i></i></div>
-        <div class="log" id="log"></div>
-        <div id="done" hidden>
-          <div class="stats">
-            <div class="stat teal"><b id="sIdeas">0</b><span>central ideas</span></div>
-            <div class="stat"><b id="sPapers">0</b><span>papers</span></div>
-            <div class="stat"><b id="sClaims">0</b><span>key claims</span></div>
-            <div class="stat flare"><b id="sContra">0</b><span>disagreements</span></div>
+      <div class="results" id="results" hidden>
+        <div class="reshead">
+          <div><div class="label" style="margin:0" id="resLabel">Search results</div><div class="muted" id="resSummary"></div></div>
+          <div class="row">
+            <button class="btn ghost small" id="resClose">Close</button>
+            <button class="btn flare" id="resAdd" disabled>Add selected</button>
           </div>
-          <div class="row" style="margin-top:16px"><button class="btn flare" id="doneObsidian">Open in Obsidian</button><button class="btn zbtn" id="zSyncBtn" hidden>Sync to Zotero again</button><span class="fine" id="zSyncMsg"></span></div>
+        </div>
+        <div class="reslist" id="resList"></div>
+      </div>
+
+      <div class="papers" id="papersBox">
+        <div class="phead">
+          <div><div class="label" style="margin-bottom:4px">Papers in this project</div><div class="pcount" id="pCount">0</div></div>
+          <div class="ptools">
+            <input type="search" id="pSearch" placeholder="Search title, author, year…" aria-label="Search papers">
+            <select id="pSort" aria-label="Sort papers">
+              <option value="added">Recently added</option>
+              <option value="year">Newest first</option>
+              <option value="title">Title A–Z</option>
+              <option value="ideas">Most connected</option>
+            </select>
+          </div>
+        </div>
+        <div class="pfilters" id="pFilters"></div>
+        <div class="plist" id="pList"></div>
+      </div>
+     </div>
+
+     <aside class="rail">
+      <div class="card">
+        <div class="label">Research question</div>
+        <textarea id="question" rows="4" placeholder="What is your lit review trying to answer?"></textarea>
+        <div class="hint" id="qHint">Optional. Organizes the outline into sections that answer it. Saved when you click away.</div>
+      </div>
+
+      <div class="card" id="zCheck" hidden>
+        <div class="label">Zotero <button class="btn small ghost" id="zcRefresh" title="Check again">Check again</button></div>
+        <div class="zchead"><span class="ic" id="zcIcon">·</span><div><div class="zctitle" id="zcTitle">Checking…</div><div class="fine" id="zcSub"></div></div></div>
+        <div id="zcRemovedBox" hidden>
+          <div class="zcsec">Still in Zotero, no longer in this project</div>
+          <div class="zclist" id="zcRemoved"></div>
+          <div class="zcacts">
+            <button class="btn small" id="zcUncollect" disabled title="Take it out of the Tether / project collection; it stays in your library">Take out of collection</button>
+            <button class="btn small danger" id="zcTrash" disabled title="Move to Zotero's trash (restorable from there). Only for items tether added.">Move to Zotero trash</button>
+            <button class="btn small ghost" id="zcKeep" disabled title="Leave it in Zotero and stop listing it here">Keep</button>
+          </div>
+        </div>
+        <div id="zcMissingBox" hidden>
+          <div class="zcsec">In this project, not in Zotero yet</div>
+          <div class="zclist" id="zcMissing"></div>
+          <div class="fine" id="zcMissingNote"></div>
         </div>
       </div>
+     </aside>
     </section>
   </main>
 </div>
@@ -530,7 +689,8 @@ const setupComplete = () => S && S.key_set && S.vault_ok;
 function show(v) {
   view = v;
   for (const id of ["vSetup", "vNew", "vProject"]) $(id).hidden = id !== v;
-  $("vProject").style.display = v === "vProject" ? "flex" : "none";
+  $("vProject").style.display = v === "vProject" ? "grid" : "none";
+  document.querySelector("main").classList.toggle("wide", v === "vProject");
 }
 
 function route() {
@@ -552,7 +712,7 @@ function renderSide() {
   box.innerHTML = S.projects.length ? S.projects.map((p) => `
     <button class="proj ${p.name === current && view === "vProject" ? "active" : ""}" data-name="${esc(p.name)}">
       <b>${esc(p.name)}</b>
-      <span>${p.built ? (p.current ? `${p.ideas} ideas · ${p.papers} papers` : `${p.papers} papers · needs update`) : p.sources ? `${p.sources} PDFs · not built yet` : "empty"}</span>
+      <span>${(p.count ?? p.papers) ? `${p.count ?? p.papers} paper${(p.count ?? p.papers) === 1 ? "" : "s"}` : "empty"}${p.built && p.current ? ` · ${p.ideas} ideas` : p.built ? " · needs update" : (p.count ? " · not built yet" : "")}${p.built && p.count > p.papers ? ` · ${p.count - p.papers} new` : ""}</span>
     </button>`).join("") : '<div class="muted" style="font-size:13px">No projects yet.</div>';
   box.querySelectorAll(".proj").forEach((b) => b.onclick = () => openProject(b.dataset.name));
 }
@@ -597,7 +757,7 @@ function renderSetup() {
   $("vaultPathShown").textContent = S.vault;
   $("vaultNotOpened").hidden = !(S.vault_ok && !S.vault_is_obsidian);
   const v = S.vault_ok ? S.vault.split(/[\\/]/).pop() : "Your Vault";
-  $("vaultTree").innerHTML = `${esc(v)}/\n├── your own notes…        <span style="color:var(--dim)">(untouched)</span>\n└── <em>Tether/</em>\n    ├── <em>&lt;project one&gt;/</em>    Sources/ Papers/ Claims/ Concepts/ 00 Overview\n    └── <em>&lt;project two&gt;/</em>`;
+  $("vaultTree").innerHTML = `${esc(v)}/\n├── your own notes…        <span style="color:var(--dim)">(untouched)</span>\n└── <em>Tether/</em>\n    ├── <em>&lt;project one&gt;/</em>    Ideas/ Papers/ Sources/ 00 Overview\n    └── <em>&lt;project two&gt;/</em>`;
   // obsidian
   const o = S.obsidian_installed;
   $("stepObs").classList.toggle("done", !!o); $("obsOk").hidden = !o; $("obsGet").hidden = !!o;
@@ -678,22 +838,222 @@ async function openProject(name) {
   forceSettings = false;
   let p;
   try { p = await api(`/api/projects/${enc(name)}`); } catch (e) { return toast(e.message, true); }
-  current = p.name; files = p.files;
+  current = p.name; paperRows = []; paperFilter = "all"; $("pSearch").value = "";
   $("projTitle").textContent = p.name;
-  $("question").value = savedQ = p.question || ""; $("urls").value = ""; $("topic").value = ""; $("since").value = "";
-  $("qHint").textContent = "Organizes the outline. Saved automatically.";
+  $("question").value = savedQ = p.question || ""; $("urls").value = ""; $("topic").value = ""; $("since").value = ""; closeResults();
+  $("qHint").textContent = "Optional. Organizes the outline into sections that answer it. Saved when you click away.";
   $("projObsidian").hidden = !p.built;
   $("run").hidden = true; $("log").innerHTML = ""; act = { run: -1, len: 0, state: "", proj: null };
-  renderFiles(); renderZoteroProject(p); show("vProject"); renderSide(); updateGo(); pollActivity();
+  renderPapers(); renderZoteroProject(p); show("vProject"); renderSide(); updateGo(); loadPapers(); loadZCheck(); pollActivity();
 }
 
-function renderFiles() {
-  $("files").innerHTML = files.map((f) => `<span class="chip"><span title="${esc(f.name)}">${esc(f.name)}</span><small style="color:var(--dim)">${f.kb} KB</small><button data-f="${esc(f.name)}" title="Remove from this project" aria-label="Remove ${esc(f.name)}">×</button></span>`).join("");
-  $("files").querySelectorAll("button").forEach((b) => b.onclick = async () => {
-    try { files = (await del(`/api/projects/${enc(current)}/sources/${enc(b.dataset.f)}`)).files; renderFiles(); nudge(); }
-    catch (e) { toast(e.message, true); }
-  });
+/* ---------- the project's papers ---------- */
+let paperRows = [], paperInfo = { total: 0, in_graph: 0, built: false, zotero_connected: false, suggested: 0 }, paperFilter = "all";
+let lastPapersLoad = 0;
+async function loadPapers() {
+  if (!current) return;
+  const proj = current;
+  try {
+    const j = await api(`/api/projects/${enc(proj)}/papers`);
+    if (proj !== current) return;
+    paperRows = j.papers; paperInfo = j; lastPapersLoad = Date.now();
+    const sp = S && S.projects.find((x) => x.name === proj);
+    if (sp && sp.count !== j.total) { sp.count = j.total; renderSide(); }
+    renderPapers(); renderAdds(lastActivity);
+  } catch (e) { console.warn("papers", e); }
 }
+const authorLine = (r) => r.authors.length ? r.authors.map((a) => a.split(" ").slice(-1)[0]).join(", ") + (r.more_authors ? " et al." : "") : "";
+function paperState(r) {
+  // -> [icon class, icon text, status text, status class]
+  const j = lastActivity || {};
+  const now = j.now || {};
+  if (r.in_graph) {
+    if (r.kind === "abstract") return ["warn", "!", `Abstract only · ${r.claims} key claims`, "warn"];
+    if (!r.claims) return ["warn", "!", "Read, but no claim passed the quote check", "warn"];
+    if (r.isolated) return ["warn", "!", `Read · ${r.claims} key claims · shares no idea with the other papers`, "warn"];
+    return ["ok", "✓", `Read · ${r.claims} key claims · feeds ${r.ideas} idea${r.ideas === 1 ? "" : "s"}`, ""];
+  }
+  if (j.state === "running") {
+    if (now.title && norm(now.title) === norm(r.title)) return ["spin", "", now.step || "Reading…", "busy"];
+    return ["", "…", "Queued: read in this update", ""];
+  }
+  if (j.state === "waiting") return ["", "…", "Queued: the update starts in a moment", ""];
+  if (j.state === "approval") return ["", "$", "Waiting for your OK on the update price", ""];
+  if (j.state === "paused") return ["", "‖", "Not read yet: update paused", ""];
+  return ["", "·", "Not read yet", ""];
+}
+const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const PFILTERS = [
+  ["all", "All", () => true],
+  ["attention", "Needs attention", (r) => r.in_graph && (r.isolated || !r.claims || r.kind === "abstract" || !r.verified)],
+  ["unread", "Not read yet", (r) => !r.in_graph],
+  ["abstract", "Abstract only", (r) => r.kind === "abstract"],
+  ["nozotero", "Not in Zotero", (r) => r.zotero === false],
+];
+function renderPapers() {
+  const n = paperRows.length, inG = paperRows.filter((r) => r.in_graph).length;
+  $("suggestBtn").hidden = !paperInfo.suggested;
+  $("suggestBtn").textContent = `Papers your sources cite (${paperInfo.suggested || 0})`;
+  $("pCount").innerHTML = `${n} paper${n === 1 ? "" : "s"}` + (n && inG < n ? `<small>${inG} in the graph · ${n - inG} not read yet</small>` : n ? "<small>all in the graph</small>" : "");
+  $("pFilters").innerHTML = PFILTERS.filter(([k]) => k !== "nozotero" || paperInfo.zotero_connected).map(([k, label, f]) => {
+    const c = paperRows.filter(f).length;
+    return `<button class="pf ${paperFilter === k ? "on" : ""}" data-f="${k}" ${!c && k !== "all" ? "disabled" : ""}>${label}<b>${c}</b></button>`;
+  }).join("");
+  $("pFilters").querySelectorAll(".pf").forEach((b) => b.onclick = () => { paperFilter = b.dataset.f; renderPapers(); });
+  const q = norm($("pSearch").value);
+  const f = (PFILTERS.find(([k]) => k === paperFilter) || PFILTERS[0])[2];
+  let rows = paperRows.filter(f).filter((r) => !q || norm(`${r.title} ${r.authors.join(" ")} ${r.year || ""} ${r.venue || ""}`).includes(q));
+  const sort = $("pSort").value;
+  rows = rows.slice().sort(sort === "year" ? (a, b) => (b.year || 0) - (a.year || 0)
+    : sort === "title" ? (a, b) => a.title.localeCompare(b.title)
+    : sort === "ideas" ? (a, b) => b.ideas - a.ideas || b.claims - a.claims
+    : (a, b) => b.added - a.added);
+  if (!n) { $("pList").innerHTML = '<div class="pempty">No papers yet. Drop PDFs above, paste links, search a topic, or import from Zotero.</div>'; return; }
+  if (!rows.length) { $("pList").innerHTML = '<div class="pempty">No papers match.</div>'; return; }
+  $("pList").innerHTML = rows.map((r) => {
+    const [ic, it, st, sc] = paperState(r);
+    const meta = [authorLine(r), r.year || "n.d.", r.venue].filter(Boolean).join(" · ");
+    const src = { file: "Dropped PDF", link: r.kind === "abstract" ? "From a link (abstract only)" : "From a link", zotero: "From Zotero" }[r.source] || "";
+    const z = r.zotero === true ? '<span class="tick" title="This paper is in your Zotero library">✓ Zotero</span>'
+      : r.zotero === false ? '<span class="tick off" title="Not in your Zotero library yet">not in Zotero</span>' : "";
+    return `<div class="prow" data-k="${esc(r.key)}">
+      <span class="ic ${ic}">${it}</span>
+      <div style="min-width:0">
+        <div class="pt" title="${esc(r.title)}">${esc(r.title)}</div>
+        <div class="pm">${esc(meta)}${src ? ` · ${src}` : ""}${r.verified || !r.in_graph ? "" : ' · <span style="color:var(--gold)">check authors/year</span>'}</div>
+        <div class="ps ${sc}">${esc(st)}</div>
+      </div>
+      <div class="pz">${z}</div>
+      <div class="pa">
+        ${r.file ? `<button class="btn ghost" data-act="pdf" title="Open the PDF">PDF</button>` : r.url ? `<a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener" title="Open the paper's page">Page</a>` : ""}
+        ${r.paper_id ? `<button class="btn ghost" data-act="note" title="Open this paper's note in Obsidian">Note</button>` : ""}
+        <button class="btn ghost danger" data-act="remove" title="Remove from this project" aria-label="Remove">✕</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+$("pSearch").addEventListener("input", renderPapers);
+$("pSort").addEventListener("change", renderPapers);
+$("pList").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const r = paperRows.find((x) => x.key === b.closest(".prow").dataset.k); if (!r) return;
+  if (b.dataset.act === "pdf") return post("/api/open", { project: current, target: "pdf", file: r.file }).catch((err) => toast(err.message, true));
+  if (b.dataset.act === "note") return post("/api/open", { project: current, target: "note", paper: r.paper_id }).catch((err) => toast(err.message, true));
+  const ok = await ask({ title: "Remove this paper?", danger: true, yes: "Remove",
+    body: `“${r.title}” will be taken out of this project${r.file ? " and its PDF deleted from the project's Sources folder" : ""}. The graph updates without it. Nothing in Zotero is changed.` });
+  if (!ok) return;
+  try {
+    if (r.file) await del(`/api/projects/${enc(current)}/sources/${enc(r.file)}`);
+    else await post(`/api/projects/${enc(current)}/remove-abstract`, { title: r.title });
+    toast("Removed. The graph will update."); loadPapers(); loadZCheck(); nudge();
+    S = await api("/api/state"); renderSide();
+  } catch (err) { toast(err.message, true); }
+});
+
+
+/* ---------- Zotero: what's out of step with this project ---------- */
+let zc = null; const zcPick = new Set();
+async function loadZCheck() {
+  if (!current) return;
+  const proj = current;
+  if (!S.zotero_connected) { $("zCheck").hidden = true; return; }
+  $("zCheck").hidden = false; $("zcTitle").textContent = "Checking…"; $("zcIcon").className = "ic spin"; $("zcIcon").textContent = "";
+  try { const j = await api(`/api/projects/${enc(proj)}/zotero-check`); if (proj !== current) return; zc = j; zcPick.clear(); renderZCheck(); }
+  catch (e) { $("zcTitle").textContent = "Couldn't check Zotero"; $("zcSub").textContent = e.message; $("zcIcon").className = "ic bad"; $("zcIcon").textContent = "!"; }
+}
+function connLine(r) {
+  const c = r.connection;
+  if (!r.in_project_before) return ["", "Added to this collection in Zotero; never in this tether project"];
+  if (!c) return ["", "Removed before tether kept track of connections"];
+  if (c.ideas) return ["yes", `Was connected: fed ${c.ideas} idea${c.ideas === 1 ? "" : "s"} (${c.how})`];
+  return ["no", `Had no connection to the other papers (${c.how})`];
+}
+function renderZCheck() {
+  const j = zc; if (!j || !j.connected) { $("zCheck").hidden = true; return; }
+  const n = j.removed.length, m = j.missing.length;
+  $("zcIcon").className = "ic " + (n || m ? "warn" : "ok"); $("zcIcon").textContent = n || m ? "!" : "✓";
+  $("zcTitle").textContent = n || m ? `${n + m} paper${n + m === 1 ? "" : "s"} out of step` : "In step with Zotero";
+  $("zcSub").textContent = j.error || (!j.collection ? "Not synced to Zotero yet." : !j.can_write ? "Read-only: allow “Add papers” in Settings → Zotero to tidy from here." : "");
+  $("zcRemovedBox").hidden = !n;
+  const ago2 = (t) => t ? ` · removed ${new Date(t * 1000).toLocaleDateString()}` : "";
+  $("zcRemoved").innerHTML = j.removed.map((r) => {
+    const [cls, txt] = connLine(r);
+    return `<label class="zcrow"><input type="checkbox" data-k="${esc(r.key)}" ${zcPick.has(r.key) ? "checked" : ""}>
+      <div><div class="zt">${esc(r.title)}${r.year ? ` <span style="color:var(--dim)">(${r.year})</span>` : ""}</div>
+      <div class="zw ${cls}">${esc(txt)}${ago2(r.removed_at)}${r.added_by_tether ? "" : " · you added it in Zotero"}</div></div></label>`;
+  }).join("");
+  $("zcRemoved").querySelectorAll("input").forEach((cb) => cb.onchange = () => { cb.checked ? zcPick.add(cb.dataset.k) : zcPick.delete(cb.dataset.k); zcButtons(); });
+  $("zcMissingBox").hidden = !m;
+  $("zcMissing").innerHTML = j.missing.map((r) => `<div class="zcrow" style="cursor:default;grid-template-columns:1fr"><div><div class="zt">${esc(r.title)}</div><div class="zw">${esc(r.cite)}${r.in_graph ? "" : " · not read yet"}</div></div></div>`).join("");
+  $("zcMissingNote").textContent = j.can_write ? "These are added to your Tether collection the next time the graph updates (or click Sync to Zotero again in Details)."
+    : "Turn on “Add papers” in Settings → Zotero to have tether add them.";
+  zcButtons();
+}
+function zcButtons() {
+  const sel = zc ? zc.removed.filter((r) => zcPick.has(r.key)) : [];
+  $("zcUncollect").disabled = !sel.length || !zc.can_write;
+  $("zcTrash").disabled = !sel.length || !zc.can_write || sel.some((r) => !r.added_by_tether);
+  $("zcTrash").title = sel.some((r) => !r.added_by_tether) ? "Only papers tether added can be trashed from here; you added at least one of these yourself."
+    : "Move to Zotero's trash (restorable from there). Only for items tether added.";
+  $("zcKeep").disabled = !sel.length;
+}
+async function zcAct(action) {
+  const sel = zc.removed.filter((r) => zcPick.has(r.key));
+  if (action === "trash") {
+    const ok = await ask({ title: `Move ${sel.length} paper${sel.length === 1 ? "" : "s"} to Zotero's trash?`, danger: true, yes: "Move to trash",
+      body: `${sel.map((r) => `“${r.title}”`).join(", ")} will go to your Zotero trash, with their notes and attachments. You can restore them from the trash in Zotero until you empty it.` });
+    if (!ok) return;
+  }
+  try {
+    const r = await post(`/api/projects/${enc(current)}/zotero-tidy`, { keys: sel.map((x) => x.key), action });
+    const verb = { trash: "moved to Zotero's trash", uncollect: "taken out of the collection", keep: "kept (no longer listed)" }[action];
+    toast(`${r.done.length} ${verb}${r.skipped.length ? `; ${r.skipped.length} skipped` : ""}.`, !!r.skipped.length);
+    loadZCheck();
+  } catch (e) { toast(e.message, true); }
+}
+$("zcUncollect").onclick = () => zcAct("uncollect");
+$("zcTrash").onclick = () => zcAct("trash");
+$("zcKeep").onclick = () => zcAct("keep");
+$("zcRefresh").onclick = loadZCheck;
+
+/* ---------- papers you just added: a checklist until dismissed ---------- */
+let lastActivity = null;
+function renderAdds(j) {
+  const adds = (j && j.adds) || [];
+  $("adds").hidden = !adds.length;
+  if (!adds.length) return;
+  const find = (a) => paperRows.find((r) => (a.file && r.file === a.file) || (a.title && norm(r.title) === norm(a.title)));
+  const pending = adds.filter((a) => a.state === "queued" || a.state === "fetching").length;
+  const c = { pdf: 0, abstract: 0, failed: 0 };
+  adds.forEach((a) => { if (c[a.state] !== undefined) c[a.state]++; });
+  const got = adds.filter((a) => a.state === "pdf" || a.state === "abstract");
+  const read = got.filter((a) => { const r = find(a); return r && r.in_graph; }).length;
+  const inZ = got.filter((a) => { const r = find(a); return r && r.zotero === true; }).length;
+  $("adds").className = "adds" + (pending || (j.state === "running") ? " busy" : "");
+  $("aTitle").textContent = pending ? `Adding ${adds.length} paper${adds.length === 1 ? "" : "s"}… ${adds.length - pending} of ${adds.length} fetched`
+    : `${got.length} of ${adds.length} paper${adds.length === 1 ? "" : "s"} added`;
+  const parts = [];
+  if (c.pdf) parts.push(`${c.pdf} with PDF`); if (c.abstract) parts.push(`${c.abstract} abstract only`); if (c.failed) parts.push(`${c.failed} failed`);
+  if (got.length) parts.push(`${read} of ${got.length} read into the graph`);
+  if (got.length && paperInfo.zotero_connected) parts.push(`${inZ} in Zotero`);
+  $("aSub").textContent = parts.join(" · ");
+  $("aList").innerHTML = adds.map((a) => {
+    const r = find(a);
+    let ic = "", it = "…", why = "Waiting";
+    if (a.state === "fetching") { ic = "spin"; it = ""; why = "Fetching…"; }
+    else if (a.state === "failed") { ic = "bad"; it = "✗"; why = a.reason || "Couldn't add it"; }
+    else if (a.state === "pdf" || a.state === "abstract") {
+      ic = a.state === "pdf" ? "ok" : "warn"; it = a.state === "pdf" ? "✓" : "!";
+      const steps = [a.state === "pdf" ? "PDF ✓" : "abstract only (no free PDF)"];
+      if (r && r.in_graph) steps.push("read ✓"); else if (j.state === "running" || j.state === "waiting") steps.push("reading soon");
+      if (r && r.zotero === true) steps.push("in Zotero ✓"); else if (r && r.zotero === false && r.in_graph) steps.push("not in Zotero");
+      why = steps.join(" · ");
+    }
+    const name = a.title ? `${esc(a.title)}${a.cite ? `<small>${esc(a.cite)}</small>` : ""}` : `<span class="mono" style="color:var(--muted)">${esc(a.label)}</span>`;
+    return `<div class="arow"><span class="ic ${ic}">${it}</span><div class="t" title="${esc(a.title || a.label)}">${name}</div><div class="why">${esc(why)}</div></div>`;
+  }).join("");
+}
+$("aClose").onclick = () => post(`/api/projects/${enc(current)}/adds/clear`).then(() => { $("adds").hidden = true; }).catch((e) => toast(e.message, true));
 
 function updateGo() {
   $("addLinks").disabled = !$("urls").value.trim();
@@ -708,8 +1068,8 @@ async function uploadFiles(list) {
   toast(`Adding ${pdfs.length} PDF${pdfs.length > 1 ? "s" : ""}…`);
   try {
     const p = await api(`/api/projects/${enc(current)}/upload`, { method: "POST", body: fd });
-    files = p.files; renderFiles(); nudge();
-    p.skipped.length ? toast(`Skipped (not real PDFs): ${p.skipped.join(", ")}`, true) : toast("Added. Updating the graph…");
+    loadPapers(); nudge();
+    p.skipped.length ? toast(`Skipped (not real PDFs): ${p.skipped.join(", ")}`, true) : toast(`✓ ${pdfs.length} PDF${pdfs.length > 1 ? "s" : ""} added. The graph will update.`);
     S = await api("/api/state"); renderSide();
   } catch (e) { toast(e.message, true); }
 }
@@ -740,19 +1100,27 @@ async function pollActivity() {
     j.log.forEach((line) => {
       const d = document.createElement("div"); d.textContent = line;
       if (line.startsWith("✗")) d.className = "err"; else if (line.startsWith("  details:")) d.className = "dim";
-      else if (line.includes("! ")) d.className = "warn";
+      else if (line.includes("! ")) d.className = "warn"; else if (line.startsWith("  + ")) d.className = "ok";
       $("log").appendChild(d);
     });
+    if (j.log_from_file) { $("logNote").hidden = false; $("logNote").textContent = "This is the log of the last update (from before tether was restarted)."; }
+    else if (j.log.length) $("logNote").hidden = true;
+    const prevState = lastActivity && lastActivity.state, prevNow = lastActivity && lastActivity.now && lastActivity.now.title;
+    lastActivity = j;
     $("log").scrollTop = $("log").scrollHeight;
     const finished = act.proj === proj && act.state === "running" && j.state !== "running";
     act = { run: j.run, len: j.log_len, state: j.state, proj };
     renderLive(j);
+    const live = j.state === "running" || (j.adds || []).some((a) => a.state === "queued" || a.state === "fetching");
+    if (prevState !== j.state || (j.now && j.now.title) !== prevNow || (live && Date.now() - lastPapersLoad > 3000)
+        || (j.adds || []).some((a) => (a.state === "pdf" || a.state === "abstract") && !paperRows.some((r) => r.file === a.file || norm(r.title) === norm(a.title)))) loadPapers();
+    else { renderPapers(); renderAdds(j); }
     delay = j.state === "running" || j.state === "waiting" ? 700 : 4000;
     if (finished) {
       if (j.state === "done" && j.stats && !j.stats.empty) toast(`“${proj}” is up to date.`);
       try {                       // refreshing the side panels must never stop the polling
         S = await api("/api/state"); renderSide();
-        const p = await api(`/api/projects/${enc(proj)}`); files = p.files; renderFiles(); renderZoteroProject(p);
+        const p = await api(`/api/projects/${enc(proj)}`); renderZoteroProject(p); loadPapers(); loadZCheck();
       } catch (e) { console.warn(e); }
     }
   } catch (e) {
@@ -779,7 +1147,7 @@ function renderLive(j) {
   const counts = src ? `${pl(src.ideas ?? 0, "central idea")} from ${pl(src.papers, "paper")}` : "";
 
   if (!S.key_set) setStatus("err", "!", "Add your API key to build the graph", "Settings → Anthropic API key. Your papers are saved and will be processed as soon as it's added.");
-  else if (j.state === "running") setStatus("busy", "", "Updating the graph…", `${j.stage} · ${pct}%${j.queued_again ? " · more changes are queued after this" : ""}`);
+  else if (j.state === "running") setStatus("busy", "", "Updating the graph…", `${j.stage}${j.now && j.now.step ? ` → ${j.now.step}` : ""} · ${pct}%${j.queued_again ? " · more changes are queued after this" : ""}`);
   else if (j.state === "approval" && j.estimate) setStatus("wait", "$", `Ready to update: about $${j.estimate.cost.toFixed(2)}`,
     (j.estimate.new_papers ? `${pl(j.estimate.new_papers, "new paper")} to read` : "Re-weaving the ideas")
     + (j.estimate.reused_papers ? `, ${j.estimate.reused_papers} reused from before` : "")
@@ -787,7 +1155,7 @@ function renderLive(j) {
   else if (j.state === "paused") setStatus("", "‖", "Update paused", "Your papers are saved. Click Update now whenever you're ready; adding or removing a paper will ask again.");
   else if (j.state === "waiting") setStatus("wait", "…", j.full_pending ? "Rebuilding from scratch shortly" : "Change detected", "The graph will update in a moment. Keep adding papers if you like; they'll be included.");
   else if (j.state === "error") setStatus("err", "!", "The last update failed", `${j.error} Your notes from the previous update are unchanged.`);
-  else if (!j.has_content) setStatus("", "+", "No papers yet", "Drop PDFs below, import from Zotero, paste links or search a topic. The graph builds itself.");
+  else if (!j.has_content) setStatus("", "+", "No papers yet", "Drop PDFs below, import from Zotero, paste links or search a topic and pick papers. The graph builds itself.");
   else if (built) setStatus("ok", "✓", "Graph is up to date", counts + (j.updated ? ` · updated ${ago(j.updated)}` : "")
     + (st && st.usage_text ? ` · last update ${st.usage_text}` : "") + ". Notes are in Obsidian.");
   else setStatus("wait", "…", "Getting ready", "Checking this project's papers…");
@@ -802,13 +1170,23 @@ function renderLive(j) {
   $("fullRebuild").hidden = busy || asking || !j.has_content || !S.key_set || !built;
   $("fullRebuild").title = "Re-read every paper and redo every comparison from zero.";
 
-  // details panel: log + stats
-  $("run").hidden = !(logOpen || j.state === "running" || j.state === "error" || (st && j.state === "done"));
+  // details panel: what's happening now, the log, and the last update's numbers
+  $("run").hidden = !(logOpen || j.state === "error" || j.state === "running");
+  $("log").hidden = !(logOpen || j.state === "error");
+  const now = j.now || {};
+  $("now").hidden = j.state !== "running" || !now.step;
+  if (!$("now").hidden) {
+    $("nLabel").textContent = now.title ? `Paper ${now.index} of ${now.total}` : "All papers";
+    $("nPaper").textContent = now.title ? now.paper : j.stage;
+    $("nTitle").textContent = now.title || "";
+    $("nStep").textContent = now.step;
+  }
+  if (!j.log.length && !$("log").childElementCount) $("log").innerHTML = '<div class="dim">Nothing has run since tether started. The next update will show its progress here.</div>';
   $("bar").className = j.state === "running" ? "bar live" : j.state === "error" ? "bar err" : "bar";
   $("bar").querySelector("i").style.width = (j.state === "done" ? 100 : pct) + "%";
   $("stage").textContent = j.state === "running" ? j.stage : j.state === "error" ? "Update stopped" : "Last update";
   $("pct").textContent = j.state === "running" ? pct + "%" : j.updated ? ago(j.updated) : "";
-  $("done").hidden = !(st && j.state === "done");
+  $("done").hidden = !(st && j.state === "done" && logOpen);
   if (st) {
     $("sPapers").textContent = st.papers; $("sClaims").textContent = st.claims;
     $("sContra").textContent = st.contradictions; $("sIdeas").textContent = st.ideas ?? "–";
@@ -819,7 +1197,9 @@ function renderLive(j) {
 
 $("toggleLog").onclick = () => {
   logOpen = !logOpen; $("toggleLog").textContent = logOpen ? "Hide details" : "Details";
-  if (logOpen) $("run").hidden = false; else pollActivity();
+  if (lastActivity) renderLive(lastActivity);
+  if (logOpen) { $("run").hidden = false; $("log").hidden = false; $("log").scrollTop = $("log").scrollHeight; }
+  pollActivity();
 };
 $("approveBtn").onclick = () => post(`/api/projects/${enc(current)}/approve`).then(nudge).catch((e) => toast(e.message, true));
 $("declineBtn").onclick = () => post(`/api/projects/${enc(current)}/decline`).then(nudge).catch((e) => toast(e.message, true));
@@ -836,17 +1216,81 @@ $("fullRebuild").onclick = async () => {
 };
 $("addLinks").onclick = async () => {
   const urls = $("urls").value.split(/\s+/).filter(Boolean);
-  try { await post(`/api/projects/${enc(current)}/add`, { urls }); $("urls").value = ""; updateGo(); toast(`Fetching ${urls.length} link${urls.length > 1 ? "s" : ""}…`); nudge(); }
+  try { await post(`/api/projects/${enc(current)}/add`, { urls }); $("urls").value = ""; updateGo(); toast(`Fetching ${urls.length} link${urls.length > 1 ? "s" : ""}… progress is shown at the top.`); nudge(); $("status").scrollIntoView({ behavior: "smooth", block: "start" }); }
   catch (e) { toast(e.message, true); }
 };
+var found = [], resMode = "search";
+const rkey = (r) => r.id || (r.doi ? "doi:" + r.doi : r.title);
+var picked = new Set();
+const authorsLine = (r) => r.authors.length ? r.authors.slice(0, 3).join(", ") + (r.authors.length > 3 || r.more_authors ? " et al." : "") : "Unknown authors";
+const renderResults = () => {
+  const fresh = found.filter((r) => !r.in_project);
+  $("resLabel").textContent = resMode === "suggested" ? "Papers your sources cite" : "Search results";
+  $("resSummary").textContent = found.length
+    ? (resMode === "suggested" ? `${found.length} paper${found.length === 1 ? "" : "s"} your sources rely on for claims they report from other work, most-cited first · ${picked.size} selected`
+       : `${found.length} found${found.length - fresh.length ? ` · ${found.length - fresh.length} already in this project` : ""} · ${picked.size} selected`)
+    : resMode === "suggested" ? "None yet. They're found when the graph updates." : "Nothing matched. Try broader terms, an earlier year, or untick “free PDF”.";
+  $("resAdd").disabled = !picked.size;
+  $("resAdd").textContent = picked.size ? `Add ${picked.size} to project` : "Add selected";
+  $("resList").innerHTML = found.map((r) => `
+    <div class="res${r.in_project ? " have" : picked.has(rkey(r)) ? " on" : ""}" data-id="${esc(rkey(r))}">
+      <input type="checkbox" ${r.in_project ? "disabled checked" : picked.has(rkey(r)) ? "checked" : ""} aria-label="Select">
+      <div>
+        <h4>${esc(r.title)}</h4>
+        <div class="meta">${esc(authorsLine(r))} · ${r.year || "n.d."}${r.venue ? ` · ${esc(r.venue)}` : ""}${r.cited_by_papers ? "" : ` · cited ${r.cited_by}×`}${r.url ? ` · <a href="${esc(r.url)}" target="_blank" rel="noopener">open</a>` : ""}</div>
+        <div class="badges">
+          ${r.in_project ? '<span class="badge">In this project</span>' : ""}
+          ${r.free_pdf ? '<span class="badge pdf">Free PDF</span>' : '<span class="badge abs">Abstract only</span>'}
+          ${r.type === "review" ? '<span class="badge rev">Review</span>' : ""}
+        </div>
+        ${r.cited_by ? `<div class="meta" style="color:var(--paper);margin-top:4px">Cited by ${r.cited_by} of your papers: ${esc(r.cited_by_papers.join(", "))}</div>` : ""}
+        ${r.why && r.why.length ? `<details><summary>What your papers cite it for</summary>${r.why.map((w) => `<div style="margin-top:6px">“${esc(w.quote)}” (${esc(w.paper)}${w.page ? `, p. ${w.page}` : ""})</div>`).join("")}</details>` : ""}
+        ${r.abstract ? `<details><summary>Abstract</summary>${esc(r.abstract)}</details>` : ""}
+      </div>
+    </div>`).join("");
+};
+$("resList").onclick = (e) => {
+  if (e.target.closest("a, summary, details")) return;
+  const row = e.target.closest(".res");
+  if (!row || row.classList.contains("have")) return;
+  const id = row.dataset.id;
+  picked.has(id) ? picked.delete(id) : picked.add(id);
+  renderResults();
+};
+function closeResults() { found = []; if (picked) picked.clear(); const r = $("results"); if (r) r.hidden = true; }
+$("resClose").onclick = closeResults;
 const addTopic = async () => {
-  if (!$("topic").value.trim()) return;
-  try { await post(`/api/projects/${enc(current)}/add`, { topic: $("topic").value, n: +$("n").value || 12, since: +$("since").value || null });
-        toast(`Searching for “${$("topic").value.trim()}”…`); $("topic").value = ""; updateGo(); nudge(); }
-  catch (e) { toast(e.message, true); }
+  const topic = $("topic").value.trim();
+  if (!topic) return;
+  $("addTopic").disabled = true; $("addTopic").textContent = "Searching…";
+  try {
+    const j = await post(`/api/projects/${enc(current)}/search`,
+      { topic, n: +$("n").value || 20, since: +$("since").value || null, oa_only: $("oaOnly").checked });
+    found = j.results; resMode = "search"; picked.clear(); $("results").hidden = false; renderResults();
+    $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { toast(e.message, true); }
+  finally { $("addTopic").textContent = "Search"; updateGo(); }
 };
 $("addTopic").onclick = addTopic;
 $("topic").onkeydown = (e) => { if (e.key === "Enter") addTopic(); };
+$("suggestBtn").onclick = async () => {
+  try {
+    const j = await api(`/api/projects/${enc(current)}/suggested`);
+    found = j.results; resMode = "suggested"; picked.clear(); $("results").hidden = false; renderResults();
+    $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { toast(e.message, true); }
+};
+$("resAdd").onclick = async () => {
+  const chosen = found.filter((r) => picked.has(rkey(r)));
+  const works = chosen.filter((r) => /^W\d+$/.test(r.id)).map((r) => r.id);
+  const urls = chosen.filter((r) => !/^W\d+$/.test(r.id) && r.doi).map((r) => `https://doi.org/${r.doi}`);
+  const abs = chosen.filter((r) => !r.free_pdf).length;
+  try {
+    await post(`/api/projects/${enc(current)}/add`, { works, urls });
+    toast(`Adding ${works.length} paper${works.length > 1 ? "s" : ""}${abs ? ` (${abs} as abstract only)` : ""}… progress is shown at the top.`);
+    closeResults(); nudge(); $("status").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { toast(e.message, true); }
+};
 let savedQ = "";
 const saveQuestion = async () => {
   const q = $("question").value.trim();
@@ -855,7 +1299,7 @@ const saveQuestion = async () => {
   catch (e) { toast(e.message, true); }
 };
 $("question").addEventListener("blur", saveQuestion);
-$("question").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("question").blur(); } };
+$("question").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("question").blur(); } };
 const openIn = (target) => post("/api/open", { project: current, target }).catch((e) => toast(e.message, true));
 $("projObsidian").onclick = $("doneObsidian").onclick = () => openIn("obsidian");
 $("projFolder").onclick = () => openIn("folder");
@@ -928,12 +1372,6 @@ function renderZoteroProject(p) {
   $("zImportBtn").hidden = !on;
   $("zImportHint").innerHTML = on ? "" : 'Have papers in Zotero? <a href="#" id="zGoSettings">Connect it in Settings</a>.';
   const go = $("zGoSettings"); if (go) go.onclick = (e) => { e.preventDefault(); $("settingsBtn").click(); setTimeout(() => $("stepZot").scrollIntoView({ behavior: "smooth" }), 50); };
-  const abs = (p && p.abstracts) || [];
-  $("absList").innerHTML = abs.map((t) => `<span class="chip abs"><span title="${esc(t)}">${esc(t)}</span><button data-t="${esc(t)}" title="Remove from this project" aria-label="Remove ${esc(t)}">×</button></span>`).join("");
-  $("absList").querySelectorAll("button").forEach((b) => b.onclick = async () => {
-    try { renderZoteroProject(await post(`/api/projects/${enc(current)}/remove-abstract`, { title: b.dataset.t })); nudge(); }
-    catch (e) { toast(e.message, true); }
-  });
 }
 async function openZModal() {
   zSel = new Set(); zColl = null; $("zmQuery").value = ""; $("zModal").hidden = false; await loadZItems(); $("zmQuery").focus();
@@ -967,7 +1405,7 @@ $("zmAll").onclick = () => { zItems.filter((i) => i.has_pdf && !i.in_project).fo
 $("zmImport").onclick = async () => {
   try {
     const r = await post(`/api/projects/${enc(current)}/zotero-import`, { keys: [...zSel] });
-    files = r.files; renderFiles(); renderZoteroProject(r); nudge(); $("zModal").hidden = true;
+    renderZoteroProject(r); loadPapers(); nudge(); $("zModal").hidden = true;
     const i = r.imported; toast(`Imported ${i.pdf} PDF${i.pdf === 1 ? "" : "s"}${i.abstract ? ` + ${i.abstract} abstract-only` : ""}${i.skipped.length ? ` · skipped ${i.skipped.length}` : ""}.`);
     S = await api("/api/state"); renderSide();
   } catch (e) { toast(e.message, true); }

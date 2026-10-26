@@ -18,6 +18,7 @@ class Citation:
     verified: bool = False           # True only when matched against an external record
     year_suffix: str = ""            # "a"/"b" when one author group has several papers in a year
     zotero_key: Optional[str] = None # set when the citation came from your Zotero library
+    pdf_url: Optional[str] = None    # where the free PDF was found (linked from the Zotero item tether creates)
 
     def short(self) -> str:
         if not self.authors:
@@ -94,6 +95,7 @@ class Idea:
     links: list[IdeaLink] = field(default_factory=list)
     check: str = "supported"         # supported | partial
     scope: str = ""                  # qualifier added when the check found the statement too broad
+    narrowed_from: str = ""          # the original statement, when the check replaced it with a narrower one
 
 
 @dataclass

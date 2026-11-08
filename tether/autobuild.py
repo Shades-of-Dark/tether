@@ -37,13 +37,18 @@ class AutoBuilder:
 
     @staticmethod
     def _empty() -> dict:
-        return {"urls": [], "topics": [], "full": False, "approved_up_to": 0.0}
+        return {"urls": [], "topics": [], "full": False, "approved_up_to": 0.0, "upgrade": []}
 
     # ------------------------------------------------------------------ public
     def request(self, name: str, urls: list[str] = (), topics: list[tuple] = (), delay: float | None = None,
-                full: bool = False, approved_up_to: float = 0.0) -> None:
+                full: bool = False, approved_up_to: float = 0.0, upgrade: list[str] = ()) -> None:
         with self._lock:
             p = self._get(name)
+            up = p["pending"].setdefault("upgrade", [])
+            if "*" in upgrade or "*" in up:
+                p["pending"]["upgrade"] = ["*"]
+            else:
+                up += [t for t in upgrade if t not in up]
             p["pending"]["full"] = p["pending"]["full"] or full
             p["pending"]["approved_up_to"] = max(p["pending"]["approved_up_to"], approved_up_to)
             p["pending"]["urls"] += [u for u in urls if u not in p["pending"]["urls"]]

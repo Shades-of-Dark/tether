@@ -979,3 +979,121 @@ def test_suggested_reading_reaches_the_notes_and_the_app(tmp_path: Path, monkeyp
     sug = c.get("/api/projects/Widgets/suggested").json()["results"]
     assert len(sug) == 1 and sug[0]["id"] == "W42" and sug[0]["free_pdf"] and sug[0]["cited_by"] == 1
     assert "relied on one fixed schedule" in sug[0]["why"][0]["quote"]
+
+
+def test_papers_ranked_by_relevance_to_the_question(tmp_path: Path, monkeypatch):
+    """The question is split into building blocks, each searched (results cached for a day);
+    candidates get a direct and a building-block score; off-topic and in-project papers are left out.
+    Any list can be scored; project papers get a full-paper score once read."""
+    from fastapi.testclient import TestClient
+    from tether import app as appmod, config
+    import tether.llm as llmmod
+    import tether.sources as src
+
+    monkeypatch.setattr(config, "ENV_FILE", tmp_path / ".env")
+    monkeypatch.setattr(config, "_SHELL_ENV", {"ANTHROPIC_API_KEY": "sk-ant-api03-" + "x" * 40})
+    made = []
+
+    class Fake(FakeLLM):
+        usage = {"cost": 0.0}
+
+        def __init__(self, **kw):
+            super().__init__()
+            made.append(self)
+    monkeypatch.setattr(llmmod, "ClaudeLLM", Fake)
+    calls = lambda: sum(len(m.calls) for m in made)
+    vault = tmp_path / "V"
+    (vault / ".obsidian").mkdir(parents=True)
+    config.set_value("TETHER_VAULT", str(vault))
+    c = TestClient(appmod.app)
+    name = c.post("/api/projects", json={"name": "Widgets"}).json()["name"]
+    assert c.post(f"/api/projects/{name}/relevant", json={}).status_code == 400          # no question yet
+    assert c.post(f"/api/projects/{name}/score", json={"items": [{"key": "x", "title": "T"}]}).json()["question"] is False
+    proj = vault / "Tether" / name
+    (proj / ".tether" / "question.txt").write_text("How should widget lines schedule under unknown weights?")
+    make_pdf(proj / "Sources" / "a.pdf", "Weight Aware Scheduling for a Widget Line", [[FILLER, "Abstract. We schedule widgets.", FILLER]])
+    make_pdf(proj / "Sources" / "b.pdf", "Notes on Garden Irrigation", [[FILLER, "Abstract. We water plants.", FILLER]])
+
+    def work(i, title):
+        return {"id": f"https://openalex.org/W{i}", "title": title, "publication_year": 2024, "cited_by_count": i,
+                "authorships": [{"author": {"display_name": "Grace Hopper"}}], "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+                "best_oa_location": {"pdf_url": "https://example.org/x.pdf"}}
+    searched = []
+
+    def fake_search(q, n, since, oa_only=True):
+        searched.append(q)
+        return [work(1, "Weight Aware Scheduling for a Widget Line"),           # already in the project
+                work(2, "Robust Widget Throughput Under Unknown Loads"), work(3, "Soil Moisture Sensing"),
+                work(4, "Online Mass Estimation for Conveyors")]
+    monkeypatch.setattr(src, "search_topic", fake_search)
+
+    r = c.post(f"/api/projects/{name}/relevant", json={"n": 10}).json()
+    assert searched == ["widget scheduling", "weight estimation", "weight aware widget scheduling"]  # dupes dropped
+    assert [b["name"] for b in r["plan"]["blocks"]] == ["Scheduling under uncertainty", "Weight estimation"]
+    assert r["considered"] == 3 and r["searches"] == 3 and r["cached_searches"] == 0
+    got = [(x["title"], x["relevance"]["score"], x["relevance"]["block"]) for x in r["results"]]
+    # the weight paper only answers a building block, but that's enough to rank it; soil moisture is dropped
+    assert got == [("Robust Widget Throughput Under Unknown Loads", 9, "Scheduling under uncertainty"),
+                   ("Online Mass Estimation for Conveyors", 8, "Weight estimation")]
+
+    n = calls()
+    r2 = c.post(f"/api/projects/{name}/relevant", json={"n": 10}).json()             # same search again
+    assert r2["cached_searches"] == 3 and len(searched) == 3 and calls() == n and r2["cost"] == 0
+    assert [x["title"] for x in r2["results"]] == [x["title"] for x in r["results"]]
+
+    # keyword search results (or anything on screen) get quick scores too
+    sc = c.post(f"/api/projects/{name}/score", json={"items": [{"key": "W9", "title": "Soil Moisture Sensing", "abstract": "x"},
+                                                               {"key": "W8", "title": "Widget Buffers", "abstract": "y"}]}).json()
+    assert sc["scores"]["W9"]["score"] == 1 and sc["scores"]["W8"]["score"] == 9 and sc["scores"]["W8"]["kind"] == "quick"
+
+    ranked = c.post(f"/api/projects/{name}/rank").json()["scores"]
+    assert ranked["file:a.pdf"]["score"] == 9 and ranked["file:b.pdf"]["score"] == 1
+    n = calls()
+    c.post(f"/api/projects/{name}/rank")                                          # cached: no new calls
+    assert calls() == n
+
+
+def test_full_paper_relevance_after_reading(tmp_path: Path):
+    """Once read, each paper is scored from its verified claims by the stronger model, stored in the
+    graph and shown on its note; a second update scores nothing again."""
+    import json
+    a, b = _two_papers(tmp_path)
+    llm = FakeLLM()
+    out = tmp_path / "P"
+    run(llm, out=out, pdfs=[a, b], lookup=False, question="Does weight knowledge help widget lines?")
+    assert ("relevance", "curate") in llm.roles and ("plan", "check") in llm.roles
+    g = json.loads((out / ".tether" / "graph.json").read_text())
+    assert all(p["relevance"]["kind"] == "full" for p in g["papers"]) and g["relevance_question"]
+    notes = "".join(p.read_text() for p in (out / "Papers").glob("*.md"))
+    assert "Relevance to your research question: 9/10" in notes
+    llm2 = FakeLLM()
+    run(llm2, out=out, pdfs=[a, b], lookup=False)
+    assert llm2.calls == []
+
+
+def test_model_is_told_its_output_limit(monkeypatch):
+    """Every request says how long the answer may be; after a cut-off the retry says so too."""
+    from tether import llm as L
+
+    class Resp:
+        def __init__(self, stop):
+            self.stop_reason, self.usage = stop, None
+            self.content = [type("B", (), {"type": "text", "text": '{"ok": 1}'})()]
+    seen = []
+
+    class Msgs:
+        def create(self, **kw):
+            seen.append((kw["max_tokens"], kw["messages"][0]["content"]))
+            return Resp("max_tokens" if len(seen) == 1 else "end_turn")
+    c = L.ClaudeLLM.__new__(L.ClaudeLLM)
+    c.client = type("C", (), {"messages": Msgs()})()
+    c.model = c.judge_model = "m"
+    c.max_tokens, c.on_retry, c.roles = 1000, lambda s: None, {}
+    monkeypatch.setattr(c, "_account", lambda *a: None, raising=False)
+    monkeypatch.setattr(c, "model_for", lambda r: "m", raising=False)
+    monkeypatch.setitem(L._mode_for, "m", "json")
+    out = c.call(system="s", user="hello", name="t", schema={"type": "object", "properties": {"ok": {"type": "integer"}},
+                                                             "required": ["ok"]}, max_tokens=1000)
+    assert out == {"ok": 1}
+    assert "about 800 tokens" in seen[0][1] and "cut off" not in seen[0][1]
+    assert seen[1][0] == 2000 and "cut off at 1,000 tokens" in seen[1][1]

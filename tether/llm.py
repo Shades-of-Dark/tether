@@ -245,10 +245,11 @@ class ClaudeLLM:
                                  "Raise it in Settings → Models & cost, or wait until next month.")
         modes = [_mode_for[model]] if model in _mode_for else list(MODES)
         last: Optional[Exception] = None
+        cut_at = 0
         for mode in modes:
             for attempt in range(6):
                 try:
-                    resp = self._request(mode, model, system, user, name, schema, budget)
+                    resp = self._request(mode, model, system, user + budget_note(budget, cut_at), name, schema, budget)
                 except Exception as e:
                     kind = type(e).__name__
                     if kind == "BadRequestError" and _UNSUPPORTED.search(str(e)) and mode != MODES[-1] \
@@ -266,6 +267,7 @@ class ClaudeLLM:
                     out = self._extract(mode, resp, name, schema, budget)
                 except CutOff as e:
                     if budget < MAX_OUTPUT:                     # give it more room once; never repeat the same request
+                        cut_at = budget
                         budget = min(budget * 2, MAX_OUTPUT)
                         self.on_retry(f"  ! {name}: answer was longer than expected; retrying with room for {budget:,} tokens")
                         last = e
@@ -279,6 +281,19 @@ class ClaudeLLM:
                 _mode_for[model] = mode
                 return out
         raise last or RuntimeError("No way to get structured output from this model.")
+
+
+def budget_note(budget: int, cut_at: int = 0) -> str:
+    """Told to the model with each request, so it sizes its answer to fit instead of being cut off.
+    Goes in the user turn (not the cached system prompt), so caching is unaffected."""
+    fit = int(budget * 0.8)
+    note = (f"\n\n[Output limit: your whole answer must fit in about {fit:,} tokens (~{int(fit * 0.75):,} words). "
+            "If there is more to say than fits, give fewer items, most important first, and keep each one short. "
+            "Never stop in the middle of the answer.]")
+    if cut_at:
+        note += (f"\n[Your previous answer to this was cut off at {cut_at:,} tokens. "
+                 "Be more concise this time.]")
+    return note
 
 
 def friendly_error(e: BaseException) -> tuple[str, str]:

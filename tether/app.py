@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlparse
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -589,7 +589,9 @@ def project_papers(name: str):
     for a in abstracts:
         cit = a["citation"]
         gp = by_title.get(_norm(cit.get("title", "")))
-        rows.append(row(f"abs:{cit.get('title', '')}", "abstract", cit, gp, "zotero" if cit.get("zotero_key") else "link"))
+        r = row(f"abs:{cit.get('title', '')}", "abstract", cit, gp, "zotero" if cit.get("zotero_key") else "link")
+        r["fulltext"] = a.get("fulltext") or None
+        rows.append(r)
     in_graph = sum(r["in_graph"] for r in rows)
     built = bool(gpapers)
     for r in rows:
@@ -737,6 +739,61 @@ def zotero_tidy(name: str, body: TidyIn):
     return {"done": done, "skipped": [k for k in body.keys if k not in done]}
 
 
+class FulltextIn(BaseModel):
+    titles: list[str] = ["*"]          # which abstract-only papers ("*" = all of them)
+
+
+@app.post("/api/projects/{name}/fulltext")
+def find_fulltext(name: str, body: FulltextIn):
+    """Look again for the full text of abstract-only papers (runs as part of an update)."""
+    d = _project_dir(name)
+    titles = body.titles or ["*"]
+    try:
+        abstracts = json.loads((d / ".tether" / "abstract_only.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        abstracts = []
+    chosen = [a["citation"]["title"] for a in abstracts
+              if titles == ["*"] or _norm(a["citation"]["title"]) in {_norm(t) for t in titles}]
+    if not chosen:
+        raise HTTPException(400, "No abstract-only papers to look for.")
+    builder.track_adds(d.name, [{"key": f"ft:{t}", "label": t, "title": t, "state": "queued", "kind": "fulltext"} for t in chosen])
+    builder.request(d.name, upgrade=titles, delay=0)
+    return {"ok": True, "looking_for": len(chosen)}
+
+
+@app.post("/api/projects/{name}/attach")
+async def attach_pdf(name: str, title: str = Form(...), force: bool = Form(False), file: UploadFile = File(...)):
+    """You downloaded the full paper yourself: it replaces that paper's abstract."""
+    from .fulltext import title_matches
+    from .models import Citation
+    from .pipeline import _nice_name, add_to_sources, replace_abstract_with
+
+    d = _project_dir(name)
+    tmp = Path(tempfile.mkdtemp(prefix="tether-attach-"))
+    try:
+        raw = tmp / "attached.pdf"
+        raw.write_bytes(await file.read())
+        if not raw.read_bytes()[:1024].lstrip().startswith(b"%PDF"):
+            raise HTTPException(400, "That file isn't a PDF.")
+        if not force and not title_matches(raw, title):
+            raise HTTPException(409, f"This PDF doesn't seem to contain the title “{title}”. Attach it anyway?")
+        try:
+            abstracts = json.loads((d / ".tether" / "abstract_only.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            abstracts = []
+        hit = next((a for a in abstracts if _norm(a["citation"]["title"]) == _norm(title)), None)
+        fields = set(Citation.__dataclass_fields__)
+        cit = Citation(**{k: v for k, v in hit["citation"].items() if k in fields}) if hit else None
+        placed = add_to_sources([_nice_name(raw, cit)], d / "Sources")[0]
+        replace_abstract_with(d, placed.name, title=title)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    builder.track_adds(d.name, [{"key": f"file:{placed.name}", "label": file.filename or placed.name, "state": "pdf",
+                                 "file": placed.name, "title": title, "reason": "replaces its abstract with the full paper"}])
+    _changed(d.name)
+    return {"ok": True, "file": placed.name}
+
+
 @app.post("/api/projects/{name}/adds/clear")
 def clear_adds(name: str):
     builder.clear_adds(_project_dir(name).name)
@@ -764,8 +821,18 @@ async def upload(name: str, files: list[UploadFile] = File(...)):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if saved:
-        builder.track_adds(d.name, [{"key": f"file:{dest.name}", "label": src.name, "state": "pdf", "file": dest.name,
-                                     "title": _quick_title(dest)} for src, dest in zip(saved, placed)])
+        from .pipeline import replace_abstract_with
+        items = []
+        for src, dest in zip(saved, placed):
+            was = None
+            try:
+                was = replace_abstract_with(d, dest.name)      # the full text of a paper that was abstract only?
+            except Exception:
+                pass
+            items.append({"key": f"file:{dest.name}", "label": src.name, "state": "pdf", "file": dest.name,
+                          "title": was or _quick_title(dest),
+                          "reason": "replaces its abstract with the full paper" if was else ""})
+        builder.track_adds(d.name, items)
         _changed(d.name)
     return project(name) | {"skipped": skipped}
 
@@ -865,10 +932,21 @@ def _rebuild(name: str, work: dict, builder_log, stage) -> dict:
     rep = Reporter(log, stage, lambda what: builder.note_now(name, what))
     if work.get("full"):
         log("Rebuilding from scratch: every paper will be read again.")
+    zot = _zotero()
+
+    def ft_item(key: str, **kw) -> None:
+        builder.track_adds(name, [{"key": key, "label": key[3:], "title": key[3:], "state": "queued", "kind": "fulltext"}])
+        builder.update_add(name, key, **kw)
+    # abstract-only papers: look for their full text (asked for, or not yet tried by this finder)
+    from .pipeline import upgrade_abstracts
+    stage("Looking for the full text of abstract-only papers", 0.005)
+    up = upgrade_abstracts(out, work.get("upgrade") or None, rep, zotero=zot, on_item=ft_item)
+    if up["found"]:
+        log(f"Found the full text of {up['found']} paper{'s' if up['found'] != 1 else ''} that were abstract only")
     if work["urls"] or work["topics"]:
         stage("Fetching papers", 0.01)
         got = fetch_remote(out, work["urls"], work["topics"], rep,
-                           on_item=lambda url, **kw: builder.update_add(name, url, **kw))
+                           on_item=lambda url, **kw: builder.update_add(name, url, **kw), zotero=zot)
         log(f"Added {got['pdf']} PDF{'s' if got['pdf'] != 1 else ''}"
             + (f" and {got['abstract']} abstract-only paper{'s' if got['abstract'] != 1 else ''}" if got["abstract"] else ""))
     if not _has_content(out):
@@ -887,7 +965,7 @@ def _rebuild(name: str, work: dict, builder_log, stage) -> dict:
         return est["cost"] <= max(ask_above(), work.get("approved_up_to", 0.0))
 
     stats = run(llm, out=out, vault_root=vault, model_tag=f"{llm.model}|{llm.judge_model}",
-                reporter=rep, zotero=_zotero(), approve=approve, fresh=bool(work.get("full")))
+                reporter=rep, zotero=zot, approve=approve, fresh=bool(work.get("full")))
     from .llm import describe_usage
     stats["tokens"] = dict(llm.usage)
     stats["usage_text"] = describe_usage(llm.usage)
@@ -1005,17 +1083,229 @@ def search_papers(name: str, body: SearchIn):
     d = _project_dir(name)
     if not body.topic.strip():
         raise HTTPException(400, "Enter search terms.")
+    from . import relevance
+    store = relevance.Store(d / ".tether")
     try:
-        works = search_topic(body.topic.strip(), max(1, min(body.n, 50)), body.since, oa_only=body.oa_only)
+        works, _ = relevance.cached_search(store, search_topic, body.topic.strip(), max(1, min(body.n, 50)),
+                                           body.since, body.oa_only)
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Couldn't reach OpenAlex ({type(e).__name__}). Check your connection and try again.")
-    titles, dois = _already_have(d)
+    finally:
+        store.save()
+    titles, dois = _project_titles(d, project_papers(name)["papers"])
     out = []
     for w in works:
         c = candidate(w)
         c["in_project"] = _norm(c["title"]) in titles or bool(c["doi"] and c["doi"].lower() in dois)
         out.append(c)
     return {"results": out}
+
+
+def _question(d: Path) -> str:
+    q = d / ".tether" / "question.txt"
+    return q.read_text(encoding="utf-8").strip() if q.exists() else ""
+
+
+def _cheap_llm():
+    from .llm import ClaudeLLM, MissingKey
+    try:
+        return ClaudeLLM()
+    except MissingKey:
+        raise HTTPException(400, "Add your Anthropic API key in Settings first.")
+
+
+def _llm_error(e: Exception) -> HTTPException:
+    from .llm import friendly_error
+    return HTTPException(400, friendly_error(e)[0])
+
+
+class RelevantIn(BaseModel):
+    n: int = 30
+    since: Optional[int] = None
+    oa_only: bool = True
+
+
+def _project_titles(d: Path, rows: list[dict]) -> tuple[set, set]:
+    titles, dois = _already_have(d)
+    titles |= {_norm(r["title"]) for r in rows}            # includes papers the graph hasn't read yet
+    dois |= {r["doi"].lower() for r in rows if r.get("doi")}
+    return titles, dois
+
+
+@app.post("/api/projects/{name}/relevant")
+def relevant_papers(name: str, body: RelevantIn):
+    """New papers for the research question: split into building blocks, search each (results cached
+    for a day), score everything, most relevant first. Nothing is added."""
+    import httpx
+    from . import relevance
+    from .sources import candidate, search_topic
+
+    d = _project_dir(name)
+    question = _question(d)
+    if not question:
+        raise HTTPException(400, "Write your research question first (in the box on the right).")
+    store = relevance.Store(d / ".tether")
+    rows = project_papers(name)["papers"]
+    llm = None
+    try:
+        p = relevance.plan_if_cached(store, question)
+        if p is None:
+            llm = _cheap_llm()
+            p = relevance.plan(llm, store, question, [r["title"] for r in rows])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _llm_error(e)
+    titles, dois = _project_titles(d, rows)
+    seen, cands = set(), []
+
+    def add(c: dict) -> None:
+        nt = _norm(c["title"])
+        k = c.get("id") or (c.get("doi") or "").lower() or nt
+        if k in seen or nt in seen or nt in titles or (c.get("doi") and c["doi"].lower() in dois):
+            return
+        seen.update({k, nt})
+        cands.append(c)
+    searches = [(q, b["name"]) for b in p["blocks"] for q in b["queries"]] + [(q, "") for q in p["direct_queries"]]
+    errors, cached = 0, 0
+    for q, block in searches:
+        try:
+            works, hit = relevance.cached_search(store, search_topic, q, 12, body.since, body.oa_only)
+            cached += hit
+        except httpx.HTTPError:
+            errors += 1
+            continue
+        for w in works:
+            add(candidate(w) | {"found_by": q, "found_for": block})
+    if searches and errors == len(searches):
+        store.save()
+        raise HTTPException(502, "Couldn't reach OpenAlex. Check your connection and try again.")
+    for c in suggested(name)["results"]:                 # papers your sources cite are candidates too
+        if not body.oa_only or c["free_pdf"]:
+            add(c | {"found_by": "cited by your papers", "found_for": ""})
+    try:
+        need = any(r["relevance"] is None for r in relevance.score(None, store, question, p["blocks"], cands))
+        if need and llm is None:
+            llm = _cheap_llm()
+        scored = relevance.score(llm, store, question, p["blocks"], cands)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _llm_error(e)
+    finally:
+        store.save()
+    scored = [c for c in scored if c["relevance"]]
+    scored.sort(key=lambda c: (-c["relevance"]["score"], -c["relevance"]["direct"], -(c.get("cited_by") or 0)))
+    keep = [c | {"in_project": False} for c in scored if c["relevance"]["score"] >= 4][: max(1, min(body.n, 60))]
+    return {"results": keep, "plan": p, "considered": len(cands), "question": question,
+            "searches": len(searches), "cached_searches": cached,
+            "cost": round(llm.usage.get("cost", 0.0), 4) if llm else 0.0}
+
+
+class ScoreIn(BaseModel):
+    items: list[dict]                  # [{key, title, abstract}]
+
+
+@app.post("/api/projects/{name}/score")
+def score_items(name: str, body: ScoreIn):
+    """Quick relevance (cheap model, title + abstract) for whatever list is on screen: keyword search
+    results, papers your sources cite. Cached per question. No question set: nothing to score."""
+    from . import relevance
+
+    d = _project_dir(name)
+    question = _question(d)
+    if not question:
+        return {"scores": {}, "question": False}
+    items = [{"key": str(i.get("key", "")), "title": str(i.get("title", ""))[:300], "abstract": str(i.get("abstract", ""))[:1500]}
+             for i in body.items[:80] if i.get("title")]
+    store = relevance.Store(d / ".tether")
+    llm = None
+    try:
+        p = relevance.plan_if_cached(store, question)
+        if p is None:
+            llm = _cheap_llm()
+            p = relevance.plan(llm, store, question, [r["title"] for r in project_papers(name)["papers"]])
+        if any(r["relevance"] is None for r in relevance.score(None, store, question, p["blocks"], items)) and llm is None:
+            llm = _cheap_llm()
+        scored = relevance.score(llm, store, question, p["blocks"], items)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _llm_error(e)
+    finally:
+        store.save()
+    return {"scores": {i["key"]: i["relevance"] for i in scored if i["relevance"]}, "question": True,
+            "cost": round(llm.usage.get("cost", 0.0), 4) if llm else 0.0}
+
+
+@app.post("/api/projects/{name}/rank")
+def rank_project(name: str):
+    """Relevance of the project's own papers: the full-paper score from the last update where there is
+    one, otherwise a quick score from the abstract or first page (cached per question)."""
+    from . import relevance
+
+    d = _project_dir(name)
+    question = _question(d)
+    if not question:
+        raise HTTPException(400, "Write your research question first (in the box on the right).")
+    rows = project_papers(name)["papers"]
+    g = _graph(d)
+    full = {}
+    if g.get("relevance_question") == _norm(question):
+        full = {x["id"]: x.get("relevance") for x in g.get("papers", []) if x.get("relevance")}
+    abstracts = {}
+    try:
+        for a in json.loads((d / ".tether" / "abstract_only.json").read_text(encoding="utf-8")):
+            abstracts[_norm(a["citation"]["title"])] = a.get("abstract", "")
+    except (OSError, json.JSONDecodeError):
+        pass
+    out = {r["key"]: full[r["paper_id"]] for r in rows if r.get("paper_id") in full}
+    items = []
+    for r in rows:
+        if r["key"] in out:
+            continue
+        text = abstracts.get(_norm(r["title"]), "") or (_opening_text(d / "Sources" / r["file"]) if r["file"] else "")
+        items.append({"key": r["key"], "title": r["title"], "abstract": text})
+    store = relevance.Store(d / ".tether")
+    llm = None
+    try:
+        p = relevance.plan_if_cached(store, question)
+        if p is None or (items and any(x["relevance"] is None for x in relevance.score(None, store, question, p["blocks"], items))):
+            llm = _cheap_llm()
+        if p is None:
+            p = relevance.plan(llm, store, question, [r["title"] for r in rows])
+        scored = relevance.score(llm, store, question, p["blocks"], items) if items else []
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _llm_error(e)
+    finally:
+        store.save()
+    out.update({i["key"]: i["relevance"] for i in scored if i["relevance"]})
+    return {"scores": out, "blocks": p["blocks"], "cost": round(llm.usage.get("cost", 0.0), 4) if llm else 0.0}
+
+
+_opening: dict[tuple, str] = {}
+
+
+def _opening_text(pdf: Path) -> str:
+    """The abstract-ish start of a paper: first page text, trimmed (cached per file)."""
+    import pymupdf
+    try:
+        key = (str(pdf), pdf.stat().st_mtime)
+    except OSError:
+        return ""
+    if key not in _opening:
+        try:
+            doc = pymupdf.open(pdf)
+            text = doc[0].get_text("text") if len(doc) else ""
+            doc.close()
+        except Exception:
+            text = ""
+        low = text.lower()
+        i = low.find("abstract")
+        _opening[key] = " ".join((text[i:] if i >= 0 else text).split())[:1500]
+    return _opening[key]
 
 
 class QuestionIn(BaseModel):

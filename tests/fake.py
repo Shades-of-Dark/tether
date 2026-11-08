@@ -105,6 +105,26 @@ class FakeLLM:
                 "gaps": [{"text": "Nobody tested off-center widgets on a real line.", "claims": [some_claim]},
                          {"text": "A gap citing nothing real.", "claims": ["C-9999"]}]}
 
+    # relevance: building blocks with queries (one duplicate); widget papers score high, others low
+    def _plan(self, user):
+        return {"blocks": [{"name": "Scheduling under uncertainty", "why": "the core decision",
+                            "queries": ["widget scheduling", "Widget Scheduling"]},
+                           {"name": "Weight estimation", "why": "the unknown input", "queries": ["weight estimation"]}],
+                "direct_queries": ["weight aware widget scheduling"]}
+
+    def _relevance(self, user):
+        papers = json.loads(user)["papers"]
+        out = []
+        for p in papers:
+            t = p["title"].lower()
+            if "widget" in t:
+                out.append({"index": p["index"], "direct": 9, "block": 1, "block_score": 7, "reason": "about widget lines"})
+            elif "mass" in t or "weight" in t:
+                out.append({"index": p["index"], "direct": 3, "block": 2, "block_score": 8, "reason": "estimates weight"})
+            else:
+                out.append({"index": p["index"], "direct": 1, "block": -1, "block_score": 0, "reason": "off-topic"})
+        return {"scores": out}
+
     def _idea_checks(self, user):
         items = json.loads(user)
         out = []

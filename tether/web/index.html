@@ -101,14 +101,22 @@
   /* project view */
   .projhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
   .drop {
-    border: 2px dashed var(--line); border-radius: 6px; min-height: 210px; display: grid; place-items: center; text-align: center;
+    border: 2px dashed var(--line); border-radius: 6px; min-height: 120px; display: grid; place-items: center; text-align: center;
     cursor: pointer; transition: .15s; background: repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255,255,255,.012) 14px 28px);
   }
   .drop:hover { border-color: var(--muted); }
   .drop.over { border-color: var(--flare); background: var(--flare-soft); }
-  .drop .big { font-size: 56px; font-weight: 700; letter-spacing: -2.4px; line-height: .9; }
+  .drop .big { font-size: 30px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
   .drop .big em { font-style: normal; color: var(--flare); }
-  .drop .sub { color: var(--muted); margin-top: 12px; font-size: 14px; }
+  .drop .sub { color: var(--muted); margin-top: 8px; font-size: 13px; }
+  .addcard { border: 1px solid var(--line); background: var(--ink-2); border-radius: 6px; padding: 6px 14px 14px; }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 -14px 14px; padding: 0 8px; overflow-x: auto; }
+  .tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 9px 12px; cursor: pointer; white-space: nowrap; }
+  .tab:hover { color: var(--paper); } .tab.on { color: var(--paper); border-bottom-color: var(--flare); }
+  .pane { display: flex; flex-direction: column; gap: 10px; }
+  .pane textarea { min-height: 96px; }
+  .iconbtn { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 4px; cursor: pointer; font-size: 15px; width: 28px; height: 28px; }
+  .iconbtn:hover { border-color: var(--line); color: var(--paper); }
   .files { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { display: inline-flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; padding: 6px 6px 6px 10px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 3px; max-width: 100%; }
   .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
@@ -132,6 +140,15 @@
   .badge.pdf { border-color: rgba(46,196,182,.5); color: var(--teal); }
   .badge.abs { border-color: rgba(244,211,94,.5); color: var(--gold); }
   .badge.rev { border-color: rgba(255,90,54,.5); color: var(--flare); }
+  .badge.rel { border-color: rgba(46,196,182,.5); color: var(--teal); }
+  .badge.rel.lo { border-color: var(--line); color: var(--muted); }
+  .relrow { line-height: 1.6; }
+  .relwhat { font-size: 12px; color: var(--teal); }
+  .relwhy { font-size: 12px; color: var(--paper); }
+  .blocks { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .blk { border: 1px solid rgba(46,196,182,.4); color: var(--teal); border-radius: 99px; padding: 2px 9px; cursor: help; }
+  #resSort, #pSort2 { background: var(--ink-2); color: var(--paper); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; font: inherit; font-size: 13px; }
+
   .res details { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.55; }
   .res summary { cursor: pointer; font-size: 12px; color: var(--dim); }
   .go { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
@@ -165,7 +182,8 @@
   .rail { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 24px; }
   .rail .card { border: 1px solid var(--line); background: var(--ink-2); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .rail textarea { min-height: 96px; font-family: var(--sans); font-size: 14px; line-height: 1.45; }
-  .zchead { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+  .zchead { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; }
+  .zctitle { font-size: 14px; }
   .zctitle { font-size: 15px; font-weight: 500; }
   .zcsec { font-size: 12px; color: var(--muted); margin-top: 6px; font-weight: 500; }
   .zclist { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow: auto; }
@@ -209,25 +227,34 @@
   .pcount { font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
   .pcount small { font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
   .ptools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .ptools input { width: 220px; padding: 8px 10px; font-size: 13px; }
-  .ptools select { background: var(--ink-2); color: var(--paper); border: 1px solid var(--line); border-radius: 3px; padding: 8px; font: inherit; font-size: 13px; }
+  .ptools input { width: 200px; padding: 6px 9px; font-size: 12.5px; }
+  .ptools select { background: var(--ink-2); color: var(--paper); border: 1px solid var(--line); border-radius: 3px; padding: 6px; font: inherit; font-size: 12.5px; }
+  #ftAll { margin-top: 6px; }
   .pfilters { display: flex; gap: 6px; flex-wrap: wrap; }
-  .pf { font-size: 12px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+  .pf { font-size: 11.5px; padding: 3px 9px; color: var(--muted); border-radius: 99px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
   .pf b { font-weight: 500; color: var(--muted); margin-left: 4px; }
-  .pf.on { border-color: var(--flare); background: var(--flare-soft); }
+  .pf.on { border-color: var(--flare); background: var(--flare-soft); color: var(--paper); }
   .pf:disabled { opacity: .35; cursor: default; }
   .plist { border: 1px solid var(--line); border-radius: 6px; max-height: 560px; overflow: auto; background: var(--ink-2); }
-  .prow { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 14px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--ink-3); }
+  .prow { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: start; padding: 10px 14px; border-top: 1px solid var(--ink-3); }
+  .prow .ic { width: 18px; height: 18px; font-size: 11px; margin-top: 1px; }
   .prow:first-child { border-top: none; }
   .prow:hover { background: var(--ink-3); }
-  .prow .pt { font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .prow .pt { font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .prow .pm { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .prow .ps { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .prow .ps.warn { color: var(--gold); } .prow .ps.busy { color: var(--flare); }
-  .prow .pa { display: flex; gap: 4px; }
+  .prow .pm .zt { color: var(--teal); }
+  .prow .pm .sep { color: var(--dim); margin: 0 5px; }
+  .prow .relrow { margin-top: 5px; }
+  .prow .pa { display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }
+  .prow:hover .pa, .prow:focus-within .pa { opacity: 1; }
+  .ftacts { display: inline-flex; gap: 6px; margin-left: 8px; }
+  .ftacts button { background: none; border: none; padding: 0; color: var(--flare); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  @media (hover: none) { .prow .pa { opacity: 1; } }
   .prow .pa .btn { padding: 4px 8px; font-size: 11px; }
   .pempty { padding: 26px; text-align: center; color: var(--muted); font-size: 14px; }
-  @media (max-width: 760px) { .prow { grid-template-columns: 22px 1fr; } .prow .pz, .prow .pa { grid-column: 2; } .ptools input { width: 100%; } }
+  @media (max-width: 760px) { .prow { grid-template-columns: 20px 1fr; } .prow .pa { grid-column: 2; opacity: 1; } .ptools input { width: 100%; } }
   /* status card */
   .status { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; border: 1px solid var(--line); background: var(--ink-2); border-radius: 8px; padding: 14px 16px; margin-top: -6px; }
   .status.ok { border-color: rgba(46,196,182,.35); } .status.err { border-color: rgba(255,77,109,.5); background: rgba(255,77,109,.06); }
@@ -498,7 +525,6 @@
           <button class="btn small flare" id="approveBtn" hidden>Go ahead</button>
           <button class="btn small ghost" id="declineBtn" hidden>Not now</button>
           <button class="btn small" id="updateNow" hidden>Update now</button>
-          <button class="btn small ghost" id="fullRebuild" hidden>Rebuild from scratch</button>
           <button class="btn small ghost" id="toggleLog">Details</button>
         </div>
         <div class="sbar" id="sBar" hidden><i></i></div>
@@ -522,7 +548,7 @@
             <div class="stat"><b id="sClaims">0</b><span>key claims</span></div>
             <div class="stat flare"><b id="sContra">0</b><span>disagreements</span></div>
           </div>
-          <div class="row" style="margin-top:16px"><button class="btn flare" id="doneObsidian">Open in Obsidian</button><button class="btn zbtn" id="zSyncBtn" hidden>Sync to Zotero again</button><span class="fine" id="zSyncMsg"></span></div>
+          <div class="row" style="margin-top:16px"><button class="btn flare" id="doneObsidian">Open in Obsidian</button><button class="btn zbtn" id="zSyncBtn" hidden>Sync to Zotero again</button><button class="btn ghost" id="fullRebuild" hidden>Rebuild from scratch</button><span class="fine" id="zSyncMsg"></span></div>
         </div>
       </div>
 
@@ -534,46 +560,46 @@
         <div class="alist" id="aList"></div>
       </div>
 
-      <div>
-        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add PDF files">
-          <div>
-            <div class="big">drop <em>papers</em> here.</div>
-            <div class="sub">PDFs only · or click to choose · copied into this project's <span class="mono">Sources</span> folder</div>
+      <div class="addcard" id="addCard">
+        <div class="tabs" role="tablist" aria-label="Add papers">
+          <button class="tab on" data-tab="drop" role="tab">Drop PDFs</button>
+          <button class="tab" data-tab="links" role="tab">Paste links</button>
+          <button class="tab" data-tab="search" role="tab">Search a topic</button>
+          <button class="tab" data-tab="zotero" role="tab">From Zotero</button>
+        </div>
+        <div class="pane" data-pane="drop">
+          <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add PDF files">
+            <div><div class="big">drop <em>papers</em> here</div><div class="sub">or click to choose PDFs</div></div>
           </div>
+          <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
         </div>
-        <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
-        <div class="zrow" style="margin-top:12px">
-          <button class="btn zbtn" id="zImportBtn" hidden>Import from Zotero…</button>
-          <span class="fine" id="zImportHint"></span>
+        <div class="pane" data-pane="links" hidden>
+          <textarea id="urls" placeholder="One per line: arXiv, DOI, publisher page or PDF links"></textarea>
+          <div class="row"><button class="btn" id="addLinks" disabled>Add links</button><span class="hint" style="margin:0">tether looks everywhere for the full paper.</span></div>
         </div>
-      </div>
-
-      <div class="grid2">
-        <div>
-          <div class="label">Links (one per line)</div>
-          <textarea id="urls" placeholder="arxiv.org/abs/…&#10;doi.org/…&#10;direct link to a PDF"></textarea>
-          <div class="row" style="margin-top:8px"><button class="btn" id="addLinks" disabled>Add links</button><span class="hint" style="margin:0">arXiv, DOI or PDF links. Paywalled papers come in as their abstract.</span></div>
-        </div>
-        <div>
-          <div class="label">Or search for papers on a topic</div>
+        <div class="pane" data-pane="search" hidden>
           <div class="topicrow">
             <input type="text" id="topic" placeholder="Search terms">
             <input type="number" id="n" value="20" min="1" max="50" title="How many results" aria-label="How many results">
             <input type="number" id="since" placeholder="Since" min="1950" max="2100" title="Earliest publication year" aria-label="Earliest year">
           </div>
-          <div class="row" style="margin-top:8px">
+          <div class="row">
             <button class="btn" id="addTopic" disabled>Search</button>
-            <label class="fine" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="oaOnly" checked style="width:auto"> Only papers with a free PDF</label>
+            <label class="fine" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="oaOnly" checked style="width:auto"> Only with a free PDF</label>
+            <button class="btn ghost small" id="suggestBtn" hidden>Papers your sources cite</button>
           </div>
-          <div class="hint">From OpenAlex. You review the results first: nothing is added to the project or to Zotero until you pick it.</div>
-          <button class="btn ghost" id="suggestBtn" style="margin-top:10px" hidden>Papers your sources cite</button>
+          <div class="hint">You review the results first. Nothing is added until you pick it.</div>
+        </div>
+        <div class="pane" data-pane="zotero" hidden>
+          <div class="zrow"><button class="btn zbtn" id="zImportBtn" hidden>Import from Zotero…</button><span class="fine" id="zImportHint"></span></div>
         </div>
       </div>
 
       <div class="results" id="results" hidden>
         <div class="reshead">
-          <div><div class="label" style="margin:0" id="resLabel">Search results</div><div class="muted" id="resSummary"></div></div>
+          <div style="flex:1;min-width:260px"><div class="label" style="margin:0" id="resLabel">Search results</div><div class="muted" id="resSummary"></div><div class="blocks" id="resBlocks"></div></div>
           <div class="row">
+            <select id="resSort" aria-label="Order results"><option value="relevance">Most relevant first</option><option value="found">As found</option><option value="year">Newest first</option></select>
             <button class="btn ghost small" id="resClose">Close</button>
             <button class="btn flare" id="resAdd" disabled>Add selected</button>
           </div>
@@ -583,14 +609,25 @@
 
       <div class="papers" id="papersBox">
         <div class="phead">
-          <div><div class="label" style="margin-bottom:4px">Papers in this project</div><div class="pcount" id="pCount">0</div></div>
+          <div><div class="label" style="margin-bottom:4px">Papers in this project</div><div class="pcount" id="pCount">0</div>
+            <button class="btn small" id="ftAll" hidden title="Look again on publishers' sites, arXiv and repositories for the full papers">Find full text</button>
+            <input type="file" id="attachInput" accept="application/pdf,.pdf" hidden></div>
           <div class="ptools">
             <input type="search" id="pSearch" placeholder="Search title, author, year…" aria-label="Search papers">
             <select id="pSort" aria-label="Sort papers">
               <option value="added">Recently added</option>
+              <option value="relevance">Most relevant to my question</option>
               <option value="year">Newest first</option>
-              <option value="title">Title A–Z</option>
               <option value="ideas">Most connected</option>
+              <option value="title">Title A–Z</option>
+            </select>
+            <select id="pSort2" aria-label="Then sort by">
+              <option value="">then by…</option>
+              <option value="added">then recently added</option>
+              <option value="relevance">then most relevant</option>
+              <option value="year">then newest</option>
+              <option value="ideas">then most connected</option>
+              <option value="title">then title A–Z</option>
             </select>
           </div>
         </div>
@@ -603,12 +640,14 @@
       <div class="card">
         <div class="label">Research question</div>
         <textarea id="question" rows="4" placeholder="What is your lit review trying to answer?"></textarea>
-        <div class="hint" id="qHint">Optional. Organizes the outline into sections that answer it. Saved when you click away.</div>
+        <div class="hint" id="qHint">Shapes the outline and ranks your papers. Saved automatically.</div>
+        <button class="btn flare" id="relBtn" disabled>Find papers for this question</button>
+        <div class="fine">Ranks what it finds, with a reason for each score. Usually under 1¢. You pick what to add.</div>
       </div>
 
       <div class="card" id="zCheck" hidden>
-        <div class="label">Zotero <button class="btn small ghost" id="zcRefresh" title="Check again">Check again</button></div>
-        <div class="zchead"><span class="ic" id="zcIcon">·</span><div><div class="zctitle" id="zcTitle">Checking…</div><div class="fine" id="zcSub"></div></div></div>
+        <div class="zchead"><span class="ic" id="zcIcon">·</span><div><div class="zctitle" id="zcTitle">Checking…</div><div class="fine" id="zcSub"></div></div>
+          <button class="iconbtn" id="zcRefresh" title="Check Zotero again" aria-label="Check Zotero again">↻</button></div>
         <div id="zcRemovedBox" hidden>
           <div class="zcsec">Still in Zotero, no longer in this project</div>
           <div class="zclist" id="zcRemoved"></div>
@@ -838,17 +877,19 @@ async function openProject(name) {
   forceSettings = false;
   let p;
   try { p = await api(`/api/projects/${enc(name)}`); } catch (e) { return toast(e.message, true); }
-  current = p.name; paperRows = []; paperFilter = "all"; $("pSearch").value = "";
+  current = p.name; paperRows = []; paperFilters = new Set(); $("pSearch").value = ""; relScores = {}; relFor = ""; $("pSort").value = "added"; $("pSort2").value = "";
   $("projTitle").textContent = p.name;
   $("question").value = savedQ = p.question || ""; $("urls").value = ""; $("topic").value = ""; $("since").value = ""; closeResults();
-  $("qHint").textContent = "Optional. Organizes the outline into sections that answer it. Saved when you click away.";
+  $("qHint").textContent = "Shapes the outline and ranks your papers. Saved automatically.";
+  $("relBtn").disabled = !(p.question || "").trim();
   $("projObsidian").hidden = !p.built;
   $("run").hidden = true; $("log").innerHTML = ""; act = { run: -1, len: 0, state: "", proj: null };
   renderPapers(); renderZoteroProject(p); show("vProject"); renderSide(); updateGo(); loadPapers(); loadZCheck(); pollActivity();
 }
 
 /* ---------- the project's papers ---------- */
-let paperRows = [], paperInfo = { total: 0, in_graph: 0, built: false, zotero_connected: false, suggested: 0 }, paperFilter = "all";
+let paperRows = [], paperInfo = { total: 0, in_graph: 0, built: false, zotero_connected: false, suggested: 0 };
+let paperFilters = new Set();
 let lastPapersLoad = 0;
 async function loadPapers() {
   if (!current) return;
@@ -856,7 +897,9 @@ async function loadPapers() {
   try {
     const j = await api(`/api/projects/${enc(proj)}/papers`);
     if (proj !== current) return;
+    const graphChanged = paperInfo.in_graph !== j.in_graph;
     paperRows = j.papers; paperInfo = j; lastPapersLoad = Date.now();
+    if (graphChanged || !Object.keys(relScores).length) rankPapers();
     const sp = S && S.projects.find((x) => x.name === proj);
     if (sp && sp.count !== j.total) { sp.count = j.total; renderSide(); }
     renderPapers(); renderAdds(lastActivity);
@@ -883,47 +926,77 @@ function paperState(r) {
   return ["", "·", "Not read yet", ""];
 }
 const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const rel = (r) => relScores[r.key] || null;
 const PFILTERS = [
-  ["all", "All", () => true],
+  ["relevant", "Relevant to my question (6+)", (r) => (rel(r) || {}).score >= 6],
   ["attention", "Needs attention", (r) => r.in_graph && (r.isolated || !r.claims || r.kind === "abstract" || !r.verified)],
   ["unread", "Not read yet", (r) => !r.in_graph],
   ["abstract", "Abstract only", (r) => r.kind === "abstract"],
   ["nozotero", "Not in Zotero", (r) => r.zotero === false],
 ];
+const PCONFLICT = { attention: ["unread"], unread: ["attention"] };     // "needs attention" only applies to read papers
+const SORTS = {
+  added: (a, b) => b.added - a.added,
+  relevance: (a, b) => ((rel(b) || {}).score ?? -1) - ((rel(a) || {}).score ?? -1),
+  year: (a, b) => (b.year || 0) - (a.year || 0),
+  ideas: (a, b) => b.ideas - a.ideas || b.claims - a.claims,
+  title: (a, b) => a.title.localeCompare(b.title),
+};
+function relLine(r) {
+  if (!r) return "";
+  const what = r.block && r.block_score > r.direct ? `building block: ${r.block}` : r.direct >= 6 ? "answers the question directly" : "";
+  const from = r.kind === "full" ? "from the full paper" : "from the abstract";
+  return `<span class="badge rel ${r.score >= 6 ? "" : "lo"}" title="Scored ${from}">Relevance ${r.score}/10</span>${what ? ` <span class="relwhat">${esc(what)}</span>` : ""} <span class="relwhy">${esc(r.reason || "")}</span>`;
+}
 function renderPapers() {
   const n = paperRows.length, inG = paperRows.filter((r) => r.in_graph).length;
   $("suggestBtn").hidden = !paperInfo.suggested;
   $("suggestBtn").textContent = `Papers your sources cite (${paperInfo.suggested || 0})`;
-  $("pCount").innerHTML = `${n} paper${n === 1 ? "" : "s"}` + (n && inG < n ? `<small>${inG} in the graph · ${n - inG} not read yet</small>` : n ? "<small>all in the graph</small>" : "");
-  $("pFilters").innerHTML = PFILTERS.filter(([k]) => k !== "nozotero" || paperInfo.zotero_connected).map(([k, label, f]) => {
-    const c = paperRows.filter(f).length;
-    return `<button class="pf ${paperFilter === k ? "on" : ""}" data-f="${k}" ${!c && k !== "all" ? "disabled" : ""}>${label}<b>${c}</b></button>`;
-  }).join("");
-  $("pFilters").querySelectorAll(".pf").forEach((b) => b.onclick = () => { paperFilter = b.dataset.f; renderPapers(); });
+  $("pCount").innerHTML = `${n} paper${n === 1 ? "" : "s"}` + (n && inG < n ? `<small>${n - inG} not read yet</small>` : "");
+  const nAbs = paperRows.filter((r) => r.kind === "abstract").length;
+  $("ftAll").hidden = !nAbs;
+  $("ftAll").textContent = `Find full text for ${nAbs} abstract-only paper${nAbs === 1 ? "" : "s"}`;
+  const active = PFILTERS.filter(([k]) => paperFilters.has(k));
+  const pass = (r, except) => active.every(([k, , f]) => k === except || f(r));
+  const hasQ = !!$("question").value.trim();
+  $("pFilters").innerHTML = `<button class="pf ${paperFilters.size ? "" : "on"}" data-f="all">All<b>${paperRows.length}</b></button>` +
+    PFILTERS.filter(([k]) => (k !== "nozotero" || paperInfo.zotero_connected) && (k !== "relevant" || hasQ)).map(([k, label, f]) => {
+      const c = paperRows.filter((r) => f(r) && pass(r, k)).length;               // how many you'd see with this one on
+      const blocked = (PCONFLICT[k] || []).some((x) => paperFilters.has(x));
+      const on = paperFilters.has(k);
+      if (!c && !on && !blocked) return "";                                         // nothing to filter: don't show it
+      return `<button class="pf ${on ? "on" : ""}" data-f="${k}" ${blocked ? "disabled" : ""} title="${blocked ? "Can't combine with the filter you have on" : on ? "Click to turn off" : "Click to add this filter"}">${label}<b>${c}</b></button>`;
+    }).join("");
+  $("pFilters").querySelectorAll(".pf").forEach((b) => b.onclick = () => {
+    const k = b.dataset.f;
+    if (k === "all") paperFilters.clear(); else if (paperFilters.has(k)) paperFilters.delete(k); else paperFilters.add(k);
+    renderPapers();
+  });
   const q = norm($("pSearch").value);
-  const f = (PFILTERS.find(([k]) => k === paperFilter) || PFILTERS[0])[2];
-  let rows = paperRows.filter(f).filter((r) => !q || norm(`${r.title} ${r.authors.join(" ")} ${r.year || ""} ${r.venue || ""}`).includes(q));
-  const sort = $("pSort").value;
-  rows = rows.slice().sort(sort === "year" ? (a, b) => (b.year || 0) - (a.year || 0)
-    : sort === "title" ? (a, b) => a.title.localeCompare(b.title)
-    : sort === "ideas" ? (a, b) => b.ideas - a.ideas || b.claims - a.claims
-    : (a, b) => b.added - a.added);
+  let rows = paperRows.filter((r) => pass(r)).filter((r) => !q || norm(`${r.title} ${r.authors.join(" ")} ${r.year || ""} ${r.venue || ""}`).includes(q));
+  $("pSort2").hidden = $("pSort").value === "added";                              // a second sort only matters after choosing one
+  const sort = $("pSort").value, sort2 = $("pSort2").hidden ? "" : $("pSort2").value;
+  const by = [SORTS[sort], sort2 && sort2 !== sort ? SORTS[sort2] : null, SORTS.added].filter(Boolean);
+  rows = rows.slice().sort((a, b) => { for (const f of by) { const d = f(a, b); if (d) return d; } return 0; });
   if (!n) { $("pList").innerHTML = '<div class="pempty">No papers yet. Drop PDFs above, paste links, search a topic, or import from Zotero.</div>'; return; }
   if (!rows.length) { $("pList").innerHTML = '<div class="pempty">No papers match.</div>'; return; }
   $("pList").innerHTML = rows.map((r) => {
     const [ic, it, st, sc] = paperState(r);
-    const meta = [authorLine(r), r.year || "n.d.", r.venue].filter(Boolean).join(" · ");
-    const src = { file: "Dropped PDF", link: r.kind === "abstract" ? "From a link (abstract only)" : "From a link", zotero: "From Zotero" }[r.source] || "";
-    const z = r.zotero === true ? '<span class="tick" title="This paper is in your Zotero library">✓ Zotero</span>'
-      : r.zotero === false ? '<span class="tick off" title="Not in your Zotero library yet">not in Zotero</span>' : "";
+    const src = { file: "Dropped PDF", link: "From a link", zotero: "From Zotero" }[r.source] || "";
+    const bits = [esc([authorLine(r), r.year || "n.d."].filter(Boolean).join(", "))];
+    if (r.venue) bits.push(`<span title="${esc(r.venue)}">${esc(r.venue.length > 38 ? r.venue.slice(0, 36) + "…" : r.venue)}</span>`);
+    if (r.zotero === true) bits.push('<span class="zt" title="In your Zotero library">✓ Zotero</span>');
+    if (r.in_graph && !r.verified) bits.push('<span style="color:var(--gold)" title="The authors or year couldn\'t be confirmed">check authors/year</span>');
+    const ft = r.kind === "abstract" ? (r.fulltext && r.fulltext.reason ? `: ${r.fulltext.reason}` : "") : "";
+    const ftActs = r.kind === "abstract" ? `<span class="ftacts"><button data-act="find" title="Look again for the full paper">Find PDF</button><button data-act="attach" title="You downloaded it yourself: attach the PDF">Attach PDF</button></span>` : "";
     return `<div class="prow" data-k="${esc(r.key)}">
-      <span class="ic ${ic}">${it}</span>
+      <span class="ic ${ic}" title="${esc(st)}">${it}</span>
       <div style="min-width:0">
-        <div class="pt" title="${esc(r.title)}">${esc(r.title)}</div>
-        <div class="pm">${esc(meta)}${src ? ` · ${src}` : ""}${r.verified || !r.in_graph ? "" : ' · <span style="color:var(--gold)">check authors/year</span>'}</div>
-        <div class="ps ${sc}">${esc(st)}</div>
+        <div class="pt" title="${esc(r.title)}${src ? " · " + src : ""}">${esc(r.title)}</div>
+        <div class="pm">${bits.join('<span class="sep">·</span>')}</div>
+        ${sc || r.kind === "abstract" ? `<div class="ps ${sc || "warn"}">${esc(r.kind === "abstract" ? "Abstract only" + ft : st)}${ftActs}</div>` : ""}
+        ${rel(r) ? `<div class="ps relrow">${relLine(rel(r))}</div>` : ""}
       </div>
-      <div class="pz">${z}</div>
       <div class="pa">
         ${r.file ? `<button class="btn ghost" data-act="pdf" title="Open the PDF">PDF</button>` : r.url ? `<a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener" title="Open the paper's page">Page</a>` : ""}
         ${r.paper_id ? `<button class="btn ghost" data-act="note" title="Open this paper's note in Obsidian">Note</button>` : ""}
@@ -933,12 +1006,53 @@ function renderPapers() {
   }).join("");
 }
 $("pSearch").addEventListener("input", renderPapers);
-$("pSort").addEventListener("change", renderPapers);
+async function findFullText(titles) {
+  try {
+    const j = await post(`/api/projects/${enc(current)}/fulltext`, { titles });
+    toast(`Looking for the full text of ${j.looking_for} paper${j.looking_for === 1 ? "" : "s"}. Progress shows above.`);
+    nudge();
+  } catch (e) { toast(e.message, true); }
+}
+$("ftAll").onclick = () => findFullText(["*"]);
+let attachFor = "";
+async function attachPdf(file, force = false) {
+  const fd = new FormData(); fd.append("title", attachFor); fd.append("force", force ? "true" : "false"); fd.append("file", file);
+  const res = await fetch(`/api/projects/${enc(current)}/attach`, { method: "POST", body: fd });
+  const j = await res.json().catch(() => ({}));
+  if (res.status === 409) {
+    const ok = await ask({ title: "Is this the right paper?", yes: "Attach anyway", body: j.detail || "The PDF doesn't seem to contain this paper's title." });
+    return ok ? attachPdf(file, true) : null;
+  }
+  if (!res.ok) throw new Error(j.detail || `Couldn't attach it (${res.status}).`);
+  toast("✓ Attached. Its abstract is replaced by the full paper; the graph will update.");
+  loadPapers(); nudge();
+}
+$("attachInput").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) attachPdf(f).catch((err) => toast(err.message, true)); };
+let relScores = {}, relFor = "", relBusy = false;
+async function rankPapers(force = false) {
+  const q = $("question").value.trim();
+  if (!q || !current || !paperRows.length) return;
+  const sig = q + "|" + paperRows.map((r) => r.key + (r.in_graph ? "+" : "")).join(",");
+  if ((!force && relFor === sig) || relBusy) return;
+  relBusy = true;
+  try { const j = await post(`/api/projects/${enc(current)}/rank`); relScores = j.scores; relFor = sig; renderPapers(); }
+  catch (e) { console.warn("rank", e); }
+  finally { relBusy = false; }
+}
+const sortChanged = () => {
+  if (($("pSort").value === "relevance" || $("pSort2").value === "relevance") && !$("question").value.trim())
+    toast("Write your research question (box on the right) to sort by relevance.", true);
+  renderPapers();
+};
+$("pSort").addEventListener("change", sortChanged);
+$("pSort2").addEventListener("change", sortChanged);
 $("pList").addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const r = paperRows.find((x) => x.key === b.closest(".prow").dataset.k); if (!r) return;
   if (b.dataset.act === "pdf") return post("/api/open", { project: current, target: "pdf", file: r.file }).catch((err) => toast(err.message, true));
   if (b.dataset.act === "note") return post("/api/open", { project: current, target: "note", paper: r.paper_id }).catch((err) => toast(err.message, true));
+  if (b.dataset.act === "find") return findFullText([r.title]);
+  if (b.dataset.act === "attach") { attachFor = r.title; return $("attachInput").click(); }
   const ok = await ask({ title: "Remove this paper?", danger: true, yes: "Remove",
     body: `“${r.title}” will be taken out of this project${r.file ? " and its PDF deleted from the project's Sources folder" : ""}. The graph updates without it. Nothing in Zotero is changed.` });
   if (!ok) return;
@@ -973,7 +1087,8 @@ function renderZCheck() {
   const n = j.removed.length, m = j.missing.length;
   $("zcIcon").className = "ic " + (n || m ? "warn" : "ok"); $("zcIcon").textContent = n || m ? "!" : "✓";
   $("zcTitle").textContent = n || m ? `${n + m} paper${n + m === 1 ? "" : "s"} out of step` : "In step with Zotero";
-  $("zcSub").textContent = j.error || (!j.collection ? "Not synced to Zotero yet." : !j.can_write ? "Read-only: allow “Add papers” in Settings → Zotero to tidy from here." : "");
+  if (!n && !m && !j.error) $("zcTitle").textContent = "Zotero: in step";
+  $("zcSub").textContent = j.error || (!j.collection ? "Not synced to Zotero yet." : (n || m) && !j.can_write ? "Read-only: allow “Add papers” in Settings → Zotero to tidy from here." : "");
   $("zcRemovedBox").hidden = !n;
   const ago2 = (t) => t ? ` · removed ${new Date(t * 1000).toLocaleDateString()}` : "";
   $("zcRemoved").innerHTML = j.removed.map((r) => {
@@ -1040,11 +1155,12 @@ function renderAdds(j) {
   $("aList").innerHTML = adds.map((a) => {
     const r = find(a);
     let ic = "", it = "…", why = "Waiting";
-    if (a.state === "fetching") { ic = "spin"; it = ""; why = "Fetching…"; }
+    if (a.state === "fetching") { ic = "spin"; it = ""; why = a.kind === "fulltext" ? "Looking for the full paper…" : "Fetching…"; }
     else if (a.state === "failed") { ic = "bad"; it = "✗"; why = a.reason || "Couldn't add it"; }
     else if (a.state === "pdf" || a.state === "abstract") {
       ic = a.state === "pdf" ? "ok" : "warn"; it = a.state === "pdf" ? "✓" : "!";
-      const steps = [a.state === "pdf" ? "PDF ✓" : "abstract only (no free PDF)"];
+      const steps = a.kind === "fulltext" ? [a.state === "pdf" ? "full text found ✓" : `still abstract only${a.reason ? ": " + a.reason : ""}`]
+        : [a.state === "pdf" ? (a.reason ? a.reason + " ✓" : "PDF ✓") : `abstract only${a.reason ? ": " + a.reason : " (no free PDF)"}`];
       if (r && r.in_graph) steps.push("read ✓"); else if (j.state === "running" || j.state === "waiting") steps.push("reading soon");
       if (r && r.zotero === true) steps.push("in Zotero ✓"); else if (r && r.zotero === false && r.in_graph) steps.push("not in Zotero");
       why = steps.join(" · ");
@@ -1073,6 +1189,14 @@ async function uploadFiles(list) {
     S = await api("/api/state"); renderSide();
   } catch (e) { toast(e.message, true); }
 }
+function showTab(t) {
+  document.querySelectorAll("#addCard .tab").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll("#addCard .pane").forEach((p) => p.hidden = p.dataset.pane !== t);
+  try { localStorage.setItem("tether.addTab", t); } catch (e) {}
+}
+document.querySelectorAll("#addCard .tab").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+try { const t = localStorage.getItem("tether.addTab"); if (t) showTab(t); } catch (e) {}
+$("addCard").addEventListener("dragenter", (e) => { if ([...(e.dataTransfer.types || [])].includes("Files")) showTab("drop"); });
 const drop = $("drop");
 ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
@@ -1156,8 +1280,8 @@ function renderLive(j) {
   else if (j.state === "waiting") setStatus("wait", "…", j.full_pending ? "Rebuilding from scratch shortly" : "Change detected", "The graph will update in a moment. Keep adding papers if you like; they'll be included.");
   else if (j.state === "error") setStatus("err", "!", "The last update failed", `${j.error} Your notes from the previous update are unchanged.`);
   else if (!j.has_content) setStatus("", "+", "No papers yet", "Drop PDFs below, import from Zotero, paste links or search a topic and pick papers. The graph builds itself.");
-  else if (built) setStatus("ok", "✓", "Graph is up to date", counts + (j.updated ? ` · updated ${ago(j.updated)}` : "")
-    + (st && st.usage_text ? ` · last update ${st.usage_text}` : "") + ". Notes are in Obsidian.");
+  else if (built) { setStatus("ok", "✓", "Graph is up to date", counts + (j.updated ? ` · updated ${ago(j.updated)}` : ""));
+    $("sSub").title = st && st.usage_text ? `Last update ${st.usage_text}` : ""; }
   else setStatus("wait", "…", "Getting ready", "Checking this project's papers…");
 
   $("sBar").hidden = j.state !== "running";
@@ -1223,12 +1347,22 @@ var found = [], resMode = "search";
 const rkey = (r) => r.id || (r.doi ? "doi:" + r.doi : r.title);
 var picked = new Set();
 const authorsLine = (r) => r.authors.length ? r.authors.slice(0, 3).join(", ") + (r.authors.length > 3 || r.more_authors ? " et al." : "") : "Unknown authors";
+let resScoring = false;
+const RSORT = { relevance: (a, b) => ((b.relevance || {}).score ?? -1) - ((a.relevance || {}).score ?? -1),
+                year: (a, b) => (b.year || 0) - (a.year || 0) };
 const renderResults = () => {
   const fresh = found.filter((r) => !r.in_project);
-  $("resLabel").textContent = resMode === "suggested" ? "Papers your sources cite" : "Search results";
+  const order = $("resSort").value;
+  if (order !== "found") found = found.map((r, i) => [r, i]).sort((x, y) => RSORT[order](x[0], y[0]) || x[1] - y[1]).map((x) => x[0]);
+  else found = found.slice().sort((a, b) => a._i - b._i);
+  const blocks = resMode === "relevant" && relInfo.plan ? relInfo.plan.blocks : [];
+  $("resBlocks").innerHTML = blocks.length ? "Building blocks searched: " + blocks.map((b) => `<span class="blk" title="${esc(b.why)} · searched ${esc(b.queries.map((q) => `“${q}”`).join(", "))}">${esc(b.name)}</span>`).join("") : "";
+  $("resLabel").textContent = resMode === "suggested" ? "Papers your sources cite" : resMode === "relevant" ? "Most relevant to your question" : "Search results";
   $("resSummary").textContent = found.length
-    ? (resMode === "suggested" ? `${found.length} paper${found.length === 1 ? "" : "s"} your sources rely on for claims they report from other work, most-cited first · ${picked.size} selected`
+    ? (resMode === "relevant" ? `${found.length} of ${relInfo.considered} papers found bear on your question or one of its building blocks · ${relInfo.searches} searches${relInfo.cached_searches ? ` (${relInfo.cached_searches} from the last day's cache)` : ""} · cost $${relInfo.cost.toFixed(3)} · ${picked.size} selected`
+       : resMode === "suggested" ? `${found.length} paper${found.length === 1 ? "" : "s"} your sources rely on for claims they report from other work, most-cited first · ${picked.size} selected`
        : `${found.length} found${found.length - fresh.length ? ` · ${found.length - fresh.length} already in this project` : ""} · ${picked.size} selected`)
+    : resMode === "relevant" ? `None of the ${relInfo.considered} papers found looked relevant enough. Try rewording the question, an earlier year, or untick “free PDF”.`
     : resMode === "suggested" ? "None yet. They're found when the graph updates." : "Nothing matched. Try broader terms, an earlier year, or untick “free PDF”.";
   $("resAdd").disabled = !picked.size;
   $("resAdd").textContent = picked.size ? `Add ${picked.size} to project` : "Add selected";
@@ -1243,7 +1377,8 @@ const renderResults = () => {
           ${r.free_pdf ? '<span class="badge pdf">Free PDF</span>' : '<span class="badge abs">Abstract only</span>'}
           ${r.type === "review" ? '<span class="badge rev">Review</span>' : ""}
         </div>
-        ${r.cited_by ? `<div class="meta" style="color:var(--paper);margin-top:4px">Cited by ${r.cited_by} of your papers: ${esc(r.cited_by_papers.join(", "))}</div>` : ""}
+        ${r.relevance ? `<div class="meta relrow" style="margin-top:5px">${relLine(r.relevance)}</div>` : resScoring ? '<div class="meta" style="margin-top:5px;color:var(--dim)">Scoring relevance…</div>' : ""}
+        ${r.cited_by_papers && r.cited_by ? `<div class="meta" style="color:var(--paper);margin-top:4px">Cited by ${r.cited_by} of your papers: ${esc(r.cited_by_papers.join(", "))}</div>` : ""}
         ${r.why && r.why.length ? `<details><summary>What your papers cite it for</summary>${r.why.map((w) => `<div style="margin-top:6px">“${esc(w.quote)}” (${esc(w.paper)}${w.page ? `, p. ${w.page}` : ""})</div>`).join("")}</details>` : ""}
         ${r.abstract ? `<details><summary>Abstract</summary>${esc(r.abstract)}</details>` : ""}
       </div>
@@ -1266,17 +1401,45 @@ const addTopic = async () => {
   try {
     const j = await post(`/api/projects/${enc(current)}/search`,
       { topic, n: +$("n").value || 20, since: +$("since").value || null, oa_only: $("oaOnly").checked });
-    found = j.results; resMode = "search"; picked.clear(); $("results").hidden = false; renderResults();
+    found = j.results.map((r, i) => ({ ...r, _i: i })); resMode = "search"; picked.clear(); $("resSort").value = "found"; $("results").hidden = false; renderResults();
+    scoreResults();
     $("results").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { toast(e.message, true); }
   finally { $("addTopic").textContent = "Search"; updateGo(); }
 };
 $("addTopic").onclick = addTopic;
 $("topic").onkeydown = (e) => { if (e.key === "Enter") addTopic(); };
+let relInfo = { plan: null, considered: 0, cost: 0, searches: 0, cached_searches: 0 };
+async function scoreResults() {
+  if (!$("question").value.trim() || !found.length) return;
+  const mode = resMode, proj = current;
+  resScoring = true; renderResults();
+  try {
+    await saveQuestion();
+    const j = await post(`/api/projects/${enc(proj)}/score`, { items: found.map((r) => ({ key: rkey(r), title: r.title, abstract: r.abstract || "" })) });
+    if (mode !== resMode || proj !== current) return;
+    found = found.map((r) => ({ ...r, relevance: j.scores[rkey(r)] || r.relevance }));
+  } catch (e) { toast(e.message, true); }
+  finally { resScoring = false; renderResults(); }
+}
+$("resSort").addEventListener("change", renderResults);
+$("relBtn").onclick = async () => {
+  await saveQuestion();
+  if (!$("question").value.trim()) return toast("Write your research question first.", true);
+  $("relBtn").disabled = true; $("relBtn").textContent = "Searching and ranking…";
+  try {
+    const j = await post(`/api/projects/${enc(current)}/relevant`, { n: 30, since: +$("since").value || null, oa_only: $("oaOnly").checked });
+    relInfo = j; found = j.results.map((r, i) => ({ ...r, _i: i })); resMode = "relevant"; picked.clear(); $("resSort").value = "relevance"; $("results").hidden = false; renderResults();
+    $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { toast(e.message, true); }
+  finally { $("relBtn").textContent = "Find papers for this question"; $("relBtn").disabled = !$("question").value.trim(); }
+};
+$("question").addEventListener("input", () => { $("relBtn").disabled = !$("question").value.trim(); });
 $("suggestBtn").onclick = async () => {
   try {
     const j = await api(`/api/projects/${enc(current)}/suggested`);
-    found = j.results; resMode = "suggested"; picked.clear(); $("results").hidden = false; renderResults();
+    found = j.results.map((r, i) => ({ ...r, _i: i })); resMode = "suggested"; picked.clear(); $("resSort").value = "found"; $("results").hidden = false; renderResults();
+    scoreResults();
     $("results").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { toast(e.message, true); }
 };
@@ -1295,7 +1458,7 @@ let savedQ = "";
 const saveQuestion = async () => {
   const q = $("question").value.trim();
   if (q === savedQ || !current) return;
-  try { await post(`/api/projects/${enc(current)}/question`, { question: q }); savedQ = q; $("qHint").textContent = "Saved. The outline will update."; nudge(); }
+  try { await post(`/api/projects/${enc(current)}/question`, { question: q }); savedQ = q; $("qHint").textContent = "Saved. The outline will update."; nudge(); relScores = {}; relFor = ""; rankPapers(true); }
   catch (e) { toast(e.message, true); }
 };
 $("question").addEventListener("blur", saveQuestion);

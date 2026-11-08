@@ -21,7 +21,8 @@ TITLE_MATCH = 90
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(headers=_HEADERS, timeout=40, follow_redirects=True)
+    from .fulltext import HEADERS
+    return httpx.Client(headers=HEADERS, timeout=40, follow_redirects=True)
 
 
 def _params(**kw):
@@ -118,8 +119,9 @@ def candidate(w: dict) -> dict:
 
 
 def download(url: str, dest: Path) -> Optional[Path]:
+    from .fulltext import HEADERS
     try:
-        with _client() as c:
+        with httpx.Client(headers=HEADERS, timeout=40, follow_redirects=True) as c:
             r = c.get(url)
             r.raise_for_status()
     except httpx.HTTPError:
@@ -131,25 +133,30 @@ def download(url: str, dest: Path) -> Optional[Path]:
     return dest
 
 
-def resolve_work(work: dict, cache_dir: Path) -> tuple[Citation, Optional[Path], Optional[list[Page]]]:
-    """Returns (citation, pdf_path or None, abstract pages or None)."""
+def resolve_work(work: dict, cache_dir: Path, zotero=None) -> tuple[Citation, Optional[Path], Optional[list[Page]]]:
+    """Returns (citation, pdf_path or None, abstract pages or None). Every route to the full text is
+    tried (see fulltext.py) before settling for the abstract."""
+    from . import fulltext
     cit = _citation_from_work(work)
     slug = re.sub(r"\W+", "_", (work.get("id") or cit.title).split("/")[-1])[:60]
-    for url in _pdf_urls(work):
-        pdf = download(url, cache_dir / f"{slug}.pdf")
-        if pdf:
-            cit.pdf_url = url
-            return cit, pdf, None
+    found = fulltext.find_pdf(cit, cache_dir / f"{slug}.pdf", work=work, zotero=zotero)
+    if found.path:
+        cit.pdf_url = found.url
+        return cit, found.path, None
     abstract = _abstract(work)
+    LAST_MISS[cit.title] = found.reason
     return cit, None, ([Page(1, abstract)] if abstract else None)
 
 
-def resolve_url(url: str, cache_dir: Path) -> tuple[Optional[Citation], Optional[Path], Optional[list[Page]]]:
+LAST_MISS: dict[str, str] = {}          # title -> why no PDF was found, for the log and the paper list
+
+
+def resolve_url(url: str, cache_dir: Path, zotero=None) -> tuple[Optional[Citation], Optional[Path], Optional[list[Page]]]:
     """arXiv links, doi.org links, OpenAlex work links, or direct PDF links."""
     m = re.search(r"openalex\.org/(?:works/)?(W\d+)", url)
     if m:
         w = get_work(m.group(1))
-        return resolve_work(w, cache_dir) if w else (None, None, None)
+        return resolve_work(w, cache_dir, zotero) if w else (None, None, None)
     m = re.search(r"arxiv\.org/(?:abs|pdf)/([\w.\-/]+?)(?:v\d+)?(?:\.pdf)?$", url)
     if m:
         aid = m.group(1)
@@ -165,9 +172,14 @@ def resolve_url(url: str, cache_dir: Path) -> tuple[Optional[Citation], Optional
     if m:
         w = lookup_by_doi(m.group(1))
         if w:
-            return resolve_work(w, cache_dir)
+            return resolve_work(w, cache_dir, zotero)
     if not re.match(r"https?://", url):
         url = "https://" + url                             # "arxiv.org/abs/..." pasted without the scheme
-        return resolve_url(url, cache_dir)
+        return resolve_url(url, cache_dir, zotero)
     slug = re.sub(r"\W+", "_", url.split("/")[-1])[:60] or "download"
-    return None, download(url, cache_dir / f"{slug}.pdf"), None
+    pdf = download(url, cache_dir / f"{slug}.pdf")
+    if pdf is None:                                        # a publisher page rather than a PDF: follow its PDF links
+        from . import fulltext
+        found = fulltext.find_pdf(Citation(title="", url=url), cache_dir / f"{slug}.pdf")
+        pdf = found.path
+    return None, pdf, None

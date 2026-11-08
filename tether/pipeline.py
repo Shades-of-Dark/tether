@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 from collections import Counter
 import json
+import time
 import shutil
 from dataclasses import asdict
 from pathlib import Path
@@ -20,7 +21,7 @@ from .models import Citation, Claim, Page, Paper, Rejected
 from .vault import write_vault
 
 PROMPT_VERSION = "3"      # bump when prompts change in a way that should re-read papers
-PIPELINE_VERSION = "5"    # bump when the vault layout changes; out-of-date projects rebuild on open
+PIPELINE_VERSION = "6"    # bump when the vault layout changes; out-of-date projects rebuild on open
 LEGACY_VERSION = "2"      # claims verified by tether 0.7 are reused instead of re-reading the PDF
 
 
@@ -169,7 +170,7 @@ def _nice_name(pdf: Optional[Path], cit: Optional[Citation]) -> Optional[Path]:
 
 
 def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep: Optional[Reporter] = None,
-                 on_item: Optional[Callable[..., None]] = None) -> dict:
+                 on_item: Optional[Callable[..., None]] = None, zotero=None) -> dict:
     """Pull in papers from links and topic searches, and keep them in the project:
     PDFs go to Sources, abstract-only papers to .tether/abstract_only.json. So later
     rebuilds (say, after you drop in another PDF) still include them."""
@@ -182,7 +183,7 @@ def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep:
         item(u, state="fetching")
         rep.now(step=f"Fetching link {n} of {len(urls)}: {u}")
         try:
-            cit, pdf, pages = sources.resolve_url(u, cache / "downloads")
+            cit, pdf, pages = sources.resolve_url(u, cache / "downloads", zotero)
         except Exception as e:                       # one bad link never stops the others
             rep.log(f"  ! {u}: couldn't fetch it ({type(e).__name__}). Skipped; download the PDF and drop it in instead.")
             item(u, state="failed", reason=f"Couldn't reach it ({type(e).__name__})")
@@ -192,7 +193,8 @@ def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep:
             item(u, state="failed", reason="No free PDF or abstract found. Download it and drop the PDF in.")
             continue
         label = cit.short() + " | " + cit.title[:70] if cit else u
-        rep.log(f"  + {label}{'' if pdf else '  [abstract only: no free PDF]'}")
+        why = (sources.LAST_MISS.get(cit.title, "") if cit else "") or "no free PDF"
+        rep.log(f"  + {label}" + ("" if pdf else f"  [abstract only: {why}]"))
         pdf = _nice_name(pdf, cit)
         found.append((cit, pdf, pages[0].text if pages else None, u))
     for topic, n, since in topics:
@@ -228,10 +230,116 @@ def fetch_remote(out: Path, urls: list[str] = (), topics: list[tuple] = (), rep:
                 have.add(_norm_title(cit.title))
                 res["abstract"] += 1
             if url:
-                item(url, state="abstract", title=title, cite=cite)
+                item(url, state="abstract", title=title, cite=cite, reason=sources.LAST_MISS.get(cit.title, ""))
+            for a in abstracts:                            # remember why, for the paper list
+                if _norm_title(a["citation"]["title"]) == _norm_title(cit.title):
+                    a["fulltext"] = {"tried_at": time.time(), "finder": FINDER_VERSION,
+                                     "reason": sources.LAST_MISS.get(cit.title, "no free copy found")}
     _save_known(cache, known)
     abs_file.write_text(json.dumps(abstracts, ensure_ascii=False), encoding="utf-8")
     return res
+
+
+FINDER_VERSION = 2          # abstract-only papers not yet tried with this finder get tried automatically
+
+
+def upgrade_abstracts(out: Path, titles: Optional[list[str]] = None, rep: Optional[Reporter] = None,
+                      zotero=None, on_item: Optional[Callable[..., None]] = None) -> dict:
+    """Look again for the full text of abstract-only papers. `titles` = which ones (None = those this
+    version of the finder hasn't tried yet; ["*"] = all). Found PDFs replace their abstract."""
+    from . import fulltext
+    rep = rep or Reporter()
+    item = on_item or (lambda key, **kw: None)
+    cache = out / ".tether"
+    abs_file = cache / "abstract_only.json"
+    if not abs_file.exists():
+        return {"found": 0, "missed": 0}
+    abstracts = json.loads(abs_file.read_text(encoding="utf-8"))
+    want = {_norm_title(t) for t in (titles or [])}
+    todo = [a for a in abstracts
+            if (titles == ["*"]) or (titles and _norm_title(a["citation"]["title"]) in want)
+            or (not titles and (a.get("fulltext") or {}).get("finder") != FINDER_VERSION)]
+    if not todo:
+        return {"found": 0, "missed": 0}
+    rep.log(f"Looking for the full text of {len(todo)} abstract-only paper{'s' if len(todo) != 1 else ''}")
+    known = _load_known(cache)
+    fields = set(Citation.__dataclass_fields__)
+    found = missed = 0
+    keep = []
+    done_titles = {_norm_title(a["citation"]["title"]) for a in todo}
+    for n, a in enumerate(todo, 1):
+        cit = Citation(**{k: v for k, v in a["citation"].items() if k in fields})
+        key = f"ft:{cit.title}"
+        item(key, state="fetching")
+        rep.now(paper=cit.short(), title=cit.title, index=n, total=len(todo),
+                step="Looking for the full text: publisher page, free copies, arXiv, repositories")
+        dest = cache / "downloads" / f"ft_{abs(hash(cit.title)) % 10**10}.pdf"
+        try:
+            res = fulltext.find_pdf(cit, dest, zotero=zotero, say=lambda m: rep.now(step=f"Looking for the full text: {m}"))
+        except Exception as e:                        # never let one paper stop the rest
+            res = fulltext.Result(reason=f"error ({type(e).__name__})")
+        if res.path:
+            cit.pdf_url = res.url or cit.pdf_url
+            pdf = _nice_name(res.path, cit)
+            placed = add_to_sources([pdf], out / "Sources")[0]
+            known[placed.name] = cit
+            found += 1
+            rep.log(f"  + full text found for {cit.short()} (via {res.how})")
+            item(key, state="pdf", title=cit.title, cite=cit.short(), file=placed.name, reason=f"via {res.how}")
+        else:
+            missed += 1
+            a["fulltext"] = {"tried_at": time.time(), "reason": res.reason, "finder": FINDER_VERSION}
+            rep.log(f"  ! still abstract only: {cit.short()} ({res.reason})")
+            item(key, state="abstract", title=cit.title, cite=cit.short(), reason=res.reason)
+            keep.append(a)
+    rest = [a for a in abstracts if _norm_title(a["citation"]["title"]) not in done_titles] + keep
+    _save_known(cache, known)
+    abs_file.write_text(json.dumps(rest, ensure_ascii=False), encoding="utf-8")
+    return {"found": found, "missed": missed}
+
+
+def replace_abstract_with(out: Path, pdf_name: str, title: Optional[str] = None) -> Optional[str]:
+    """A PDF just added to Sources may be the full text of an abstract-only paper (matched by the
+    given title, or by the PDF's own title / DOI). If so, drop the abstract and keep its citation for
+    the PDF. Returns the replaced paper's title."""
+    from .fulltext import title_matches
+    from .ingest import quick_citation
+    from rapidfuzz import fuzz
+    cache = out / ".tether"
+    abs_file = cache / "abstract_only.json"
+    pdf = out / "Sources" / pdf_name
+    if not abs_file.exists() or not pdf.exists():
+        return None
+    abstracts = json.loads(abs_file.read_text(encoding="utf-8"))
+    qc = quick_citation(pdf)
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf)
+        first = " ".join(doc[i].get_text("text") for i in range(min(2, len(doc)))).lower()
+        doc.close()
+    except Exception:
+        first = ""
+    hit = None
+    for a in abstracts:
+        c = a["citation"]
+        if title is not None:
+            if _norm_title(c["title"]) == _norm_title(title):
+                hit = a
+                break
+            continue
+        if (c.get("doi") and c["doi"].lower() in first) or \
+                fuzz.token_sort_ratio(_norm_title(c["title"]), _norm_title(qc.title)) >= 90 or \
+                (len(_norm_title(c["title"]).split()) >= 4 and title_matches(pdf, c["title"])):
+            hit = a
+            break
+    if hit is None:
+        return None
+    fields = set(Citation.__dataclass_fields__)
+    known = _load_known(cache)
+    known[pdf_name] = Citation(**{k: v for k, v in hit["citation"].items() if k in fields})
+    _save_known(cache, known)
+    abs_file.write_text(json.dumps([a for a in abstracts if a is not hit], ensure_ascii=False), encoding="utf-8")
+    return hit["citation"]["title"]
 
 
 def gather_papers(out: Path, lookup: bool, rep: Reporter, zotero=None) -> list[Paper]:
@@ -512,6 +620,25 @@ def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), top
     sc.save()
     rep.log(f"  {len(ideas)} central ideas from {len(claims)} claims across {len(papers)} papers")
 
+    rel: dict[str, dict] = {}
+    if question.strip():                              # full-paper relevance, from each paper's verified claims
+        rep.stage("Scoring each paper's relevance to your question", 0.92)
+        rep.now(paper=None, title=None, index=None,
+                step="Scoring each paper against your research question from its verified key claims")
+        from . import relevance
+        store = relevance.Store(cache)
+        try:
+            pl = relevance.plan(llm, store, question, [p.citation.title for p in papers])
+            items = [{"pid": p.id, "title": p.citation.title,
+                      "abstract": "\n".join(f"- {c.text}" + (f" ({c.qualifiers})" if c.qualifiers else "")
+                                            for c in claims if c.paper_id == p.id)} for p in papers]
+            scored = relevance.score(llm, store, question, pl["blocks"], [i for i in items if i["abstract"]], kind="full")
+            rel = {i["pid"]: i["relevance"] for i in scored if i["relevance"]}
+        except Exception as e:                        # optional: never fail an update over it
+            rep.log(f"  ! relevance scoring skipped ({type(e).__name__}: {e})")
+        finally:
+            store.save()
+
     rep.stage("Following the citations behind claims papers report from other work", 0.93)
     from . import citations
     rep.now(paper=None, title=None, index=None, step="Matching cited claims to each paper's reference list")
@@ -526,12 +653,14 @@ def run(llm: LLM, *, out: Path, pdfs: list[Path] = (), urls: list[str] = (), top
     rep.now(step=f"Writing {len(ideas)} idea notes, {len(papers)} paper notes, the outline and the overview")
     write_vault(out, paper_map, claims, ideas, outline, rejected + idea_rej, dropped, question,
                 vault_root=Path(vault_root) if vault_root else None, trimmed=trimmed_total, single=single,
-                cited=cited)
+                cited=cited, relevance=rel)
     (cache / "graph.json").write_text(json.dumps({
         "version": PIPELINE_VERSION,
         "papers": [p.to_dict() | {"pages": len(p.pages),
-                                  "abstract": p.pages[0].text if p.source_kind == "abstract-only" and p.pages else ""}
+                                  "abstract": p.pages[0].text if p.source_kind == "abstract-only" and p.pages else "",
+                                  "relevance": rel.get(p.id)}
                    for p in papers],
+        "relevance_question": _norm_title(question) if question.strip() else "",
         "claims": [asdict(c) for c in claims],
         "ideas": [asdict(i) for i in ideas],
         "single_source": [asdict(i) for i in single],

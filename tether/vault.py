@@ -115,7 +115,7 @@ def _merge_graph_colors(vault_root: Path, prefix: str) -> None:
 def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas: list[Idea], outline: dict,
                 rejected: list[Rejected], dropped_points: int, question: str = "",
                 vault_root: Optional[Path] = None, trimmed: int = 0, single: Optional[list[Idea]] = None,
-                cited: Optional[list] = None) -> None:
+                cited: Optional[list] = None, relevance: Optional[dict] = None) -> None:
     from .stages import disagreeing_papers, tensions as find_tensions
 
     single = single or []
@@ -223,6 +223,10 @@ def write_vault(out: Path, papers: dict[str, Paper], claims: list[Claim], ideas:
                  f"authors: {json.dumps(cit.authors[:15], ensure_ascii=False)}",
                  f"doi: {cit.doi or ''}", f"metadata: {cit.source}{'' if cit.verified else ' (unverified)'}",
                  f"source: {p.source_kind}", "tags: [paper]", "---", "", f"# {cit.title}", "", cit.apa(), ""]
+        r = (relevance or {}).get(p.id)
+        if r:
+            part = f"building block: {r['block']}" if r.get("block") and r.get("block_score", 0) > r.get("direct", 0) else "the question directly"
+            lines += [f"**Relevance to your research question: {r['score']}/10** ({part}). {r['reason']}", ""]
         opens = []
         if p.path:
             opens.append(link(f"Sources/{Path(p.path).name}", "Open the PDF"))
